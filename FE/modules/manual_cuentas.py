@@ -193,7 +193,7 @@ def gestionar_manual(backend_url: str):
             if not manual_editar:
                 opciones_cuentas = [
                     f"{c['codigo_cuenta']} - {c['nombre_cuenta']}" 
-                    for c in cuentas if c['estado_cuenta'] == 'ACTIVA'
+                    for c in cuentas if c['estado'] == 'ACTIVA'
                 ]
                 
                 cuenta_seleccionada = st.selectbox(

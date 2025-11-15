@@ -8,6 +8,7 @@ from typing import List, Optional
 from datetime import date
 from app.db import get_db
 from app.models.balanza_comprobacion import BalanzaComprobacion
+from app.schemas.balanza_comprobacion import BalanzaComprobacionRead
 from app.services.balanza_service import (
     generar_balanza_comprobacion, obtener_balanzas_periodo, obtener_balanza_por_id,
     validar_cuadre_periodo, obtener_analisis_cuentas_periodo
@@ -35,7 +36,7 @@ def generar_balanza(
         "message": "Balanza de comprobación generada exitosamente"
     }
 
-@router.get("/periodo/{periodo_id}", response_model=List[BalanzaComprobacion])
+@router.get("/periodo/{periodo_id}", response_model=List[BalanzaComprobacionRead])
 def listar_balanzas_periodo(
     periodo_id: int,
     db: Session = Depends(get_db)
@@ -43,7 +44,7 @@ def listar_balanzas_periodo(
     """Obtener todas las balanzas de un período"""
     return obtener_balanzas_periodo(db, periodo_id)
 
-@router.get("/{balanza_id}", response_model=BalanzaComprobacion)
+@router.get("/{balanza_id}", response_model=BalanzaComprobacionRead)
 def obtener_balanza(
     balanza_id: int,
     db: Session = Depends(get_db)

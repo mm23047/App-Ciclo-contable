@@ -12,7 +12,27 @@ from typing import List, Optional
 def create_cuenta(db: Session, cuenta_data: CatalogoCuentaCreate) -> CatalogoCuentas:
     """Crear una nueva cuenta en el catálogo de cuentas"""
     try:
-        db_cuenta = CatalogoCuentas(**cuenta_data.dict())
+        # Calcular el nivel automáticamente basado en la cuenta padre
+        nivel_cuenta = 1  # Nivel por defecto para cuentas raíz
+        
+        if cuenta_data.cuenta_padre:
+            cuenta_padre = db.query(CatalogoCuentas).filter(
+                CatalogoCuentas.id_cuenta == cuenta_data.cuenta_padre
+            ).first()
+            
+            if cuenta_padre:
+                nivel_cuenta = cuenta_padre.nivel_cuenta + 1
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La cuenta padre especificada no existe"
+                )
+        
+        # Crear el diccionario de datos y actualizar el nivel
+        cuenta_dict = cuenta_data.dict()
+        cuenta_dict['nivel_cuenta'] = nivel_cuenta
+        
+        db_cuenta = CatalogoCuentas(**cuenta_dict)
         db.add(db_cuenta)
         db.commit()
         db.refresh(db_cuenta)

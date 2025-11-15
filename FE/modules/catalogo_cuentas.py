@@ -54,7 +54,7 @@ def mostrar_catalogo(backend_url: str):
         if filtro_tipo != "Todos":
             params["tipo_cuenta"] = filtro_tipo
         if filtro_estado != "Todos":
-            params["estado_cuenta"] = filtro_estado
+            params["estado"] = filtro_estado
         if buscar_codigo:
             params["codigo_like"] = buscar_codigo
         
@@ -70,17 +70,34 @@ def mostrar_catalogo(backend_url: str):
                 # Organizar columnas
                 columnas_mostrar = [
                     'codigo_cuenta', 'nombre_cuenta', 'tipo_cuenta', 
-                    'acepta_movimientos', 'estado_cuenta', 'nivel_cuenta'
+                    'acepta_movimientos', 'estado', 'nivel_cuenta', 'cuenta_padre'
                 ]
                 
                 df_display = df_cuentas[columnas_mostrar].copy()
-                df_display.columns = [
-                    'Código', 'Nombre', 'Tipo', 'Acepta Mov.', 'Estado', 'Nivel'
+                
+                # Crear una columna de jerarquía visual
+                df_display['jerarquia'] = df_display.apply(lambda row: 
+                    '  ' * (row['nivel_cuenta'] - 1) + '└─ ' + row['nombre_cuenta'] 
+                    if row['nivel_cuenta'] > 1 else row['nombre_cuenta'], axis=1)
+                
+                # Encontrar nombres de cuentas padre
+                def get_padre_nombre(cuenta_padre_id):
+                    if cuenta_padre_id is None:
+                        return "---"
+                    padre = df_cuentas[df_cuentas['id_cuenta'] == cuenta_padre_id]
+                    return padre['nombre_cuenta'].iloc[0] if len(padre) > 0 else "---"
+                
+                df_display['padre_nombre'] = df_display['cuenta_padre'].apply(get_padre_nombre)
+                
+                # Reorganizar columnas para mostrar
+                df_final = df_display[['codigo_cuenta', 'jerarquia', 'tipo_cuenta', 'padre_nombre', 'acepta_movimientos', 'estado', 'nivel_cuenta']].copy()
+                df_final.columns = [
+                    'Código', 'Nombre (Jerarquía)', 'Tipo', 'Cuenta Padre', 'Acepta Mov.', 'Estado', 'Nivel'
                 ]
                 
                 # Mostrar tabla con formato
                 st.dataframe(
-                    df_display,
+                    df_final,
                     use_container_width=True,
                     hide_index=True
                 )
@@ -92,7 +109,7 @@ def mostrar_catalogo(backend_url: str):
                     st.metric("Total Cuentas", len(cuentas))
                 
                 with col2:
-                    activas = len([c for c in cuentas if c['estado_cuenta'] == 'ACTIVA'])
+                    activas = len([c for c in cuentas if c['estado'] == 'ACTIVA'])
                     st.metric("Cuentas Activas", activas)
                 
                 with col3:
@@ -145,15 +162,20 @@ def crear_cuenta(backend_url: str):
                 response_padre = requests.get(f"{backend_url}/api/catalogo-cuentas")
                 cuentas_padre = response_padre.json() if response_padre.status_code == 200 else []
                 
+                # Mostrar todas las cuentas como opciones de padre
+                # En un sistema contable real, cualquier cuenta puede ser padre de otra
                 opciones_padre = ["Sin cuenta padre"] + [
-                    f"{c['codigo_cuenta']} - {c['nombre_cuenta']}" 
+                    f"{c['codigo_cuenta']} - {c['nombre_cuenta']} ({'Grupo' if not c['acepta_movimientos'] else 'Detalle'})" 
                     for c in cuentas_padre 
-                    if not c['acepta_movimientos']  # Solo cuentas que no aceptan movimientos pueden ser padre
                 ]
             except:
                 opciones_padre = ["Sin cuenta padre"]
             
-            cuenta_padre = st.selectbox("Cuenta Padre", opciones_padre)
+            cuenta_padre = st.selectbox(
+                "Cuenta Padre", 
+                opciones_padre,
+                help="Selecciona la cuenta padre para crear una jerarquía. Las cuentas de grupo son más apropiadas como padres."
+            )
             
             acepta_movimientos = st.checkbox(
                 "Acepta Movimientos", 
@@ -161,7 +183,7 @@ def crear_cuenta(backend_url: str):
                 help="Si la cuenta puede tener asientos contables directos"
             )
             
-            estado_cuenta = st.selectbox(
+            estado = st.selectbox(
                 "Estado",
                 ["ACTIVA", "INACTIVA"],
                 index=0
@@ -180,6 +202,7 @@ def crear_cuenta(backend_url: str):
                 # Preparar datos
                 cuenta_padre_id = None
                 if cuenta_padre != "Sin cuenta padre":
+                    # Extraer el código de cuenta del formato "CODIGO - NOMBRE (Tipo)"
                     codigo_padre = cuenta_padre.split(" - ")[0]
                     cuenta_padre_obj = next((c for c in cuentas_padre if c['codigo_cuenta'] == codigo_padre), None)
                     if cuenta_padre_obj:
@@ -191,7 +214,7 @@ def crear_cuenta(backend_url: str):
                     "tipo_cuenta": tipo_cuenta,
                     "cuenta_padre": cuenta_padre_id,
                     "acepta_movimientos": acepta_movimientos,
-                    "estado_cuenta": estado_cuenta,
+                    "estado": estado,
                     "descripcion": descripcion if descripcion else None
                 }
                 
@@ -273,7 +296,7 @@ def editar_cuenta(backend_url: str, cuenta: Dict[str, Any], todas_las_cuentas: L
         nuevo_estado = st.selectbox(
             "Estado",
             ["ACTIVA", "INACTIVA"],
-            index=0 if cuenta['estado_cuenta'] == 'ACTIVA' else 1
+            index=0 if cuenta['estado'] == 'ACTIVA' else 1
         )
         
         nueva_descripcion = st.text_area(
@@ -286,7 +309,7 @@ def editar_cuenta(backend_url: str, cuenta: Dict[str, Any], todas_las_cuentas: L
         if submit_editar:
             datos_actualizacion = {
                 "nombre_cuenta": nuevo_nombre,
-                "estado_cuenta": nuevo_estado,
+                "estado": nuevo_estado,
                 "descripcion": nueva_descripcion if nueva_descripcion else None
             }
             
@@ -322,7 +345,7 @@ def mostrar_detalles_cuenta(cuenta: Dict[str, Any]):
     col1, col2 = st.columns(2)
     
     with col1:
-        if cuenta['estado_cuenta'] == 'ACTIVA':
+        if cuenta['estado'] == 'ACTIVA':
             st.success("🟢 ACTIVA")
         else:
             st.error("🔴 INACTIVA")

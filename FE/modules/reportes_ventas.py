@@ -58,13 +58,13 @@ def dashboard_general(backend_url: str):
     
     with col2:
         if periodo_dashboard == "Personalizado":
-            fecha_inicio = st.date_input("Desde:", value=date.today() - timedelta(days=30))
+            fecha_inicio = st.date_input("Desde:", value=date.today() - timedelta(days=30), key="dashboard_fecha_inicio")
         else:
             fecha_inicio = calcular_fecha_inicio(periodo_dashboard)
     
     with col3:
         if periodo_dashboard == "Personalizado":
-            fecha_fin = st.date_input("Hasta:", value=date.today())
+            fecha_fin = st.date_input("Hasta:", value=date.today(), key="dashboard_fecha_fin")
         else:
             fecha_fin = date.today()
     
@@ -596,13 +596,13 @@ def analisis_comparativo(backend_url: str):
     
     with col1:
         st.markdown("**Período 1:**")
-        periodo1_inicio = st.date_input("Desde (P1):", value=date.today() - timedelta(days=60))
-        periodo1_fin = st.date_input("Hasta (P1):", value=date.today() - timedelta(days=30))
+        periodo1_inicio = st.date_input("Desde (P1):", value=date.today() - timedelta(days=60), key="comp_p1_inicio")
+        periodo1_fin = st.date_input("Hasta (P1):", value=date.today() - timedelta(days=30), key="comp_p1_fin")
     
     with col2:
         st.markdown("**Período 2:**")
-        periodo2_inicio = st.date_input("Desde (P2):", value=date.today() - timedelta(days=30))
-        periodo2_fin = st.date_input("Hasta (P2):", value=date.today())
+        periodo2_inicio = st.date_input("Desde (P2):", value=date.today() - timedelta(days=30), key="comp_p2_inicio")
+        periodo2_fin = st.date_input("Hasta (P2):", value=date.today(), key="comp_p2_fin")
     
     if st.button("🔍 Generar Comparativo", use_container_width=True):
         generar_comparativo_periodos(backend_url, periodo1_inicio, periodo1_fin, periodo2_inicio, periodo2_fin)
@@ -731,10 +731,10 @@ def top_productos_clientes(backend_url: str):
     col1, col2 = st.columns(2)
     
     with col1:
-        fecha_desde = st.date_input("Desde:", value=date.today() - timedelta(days=30))
+        fecha_desde = st.date_input("Desde:", value=date.today() - timedelta(days=30), key="top_fecha_desde")
     
     with col2:
-        fecha_hasta = st.date_input("Hasta:", value=date.today())
+        fecha_hasta = st.date_input("Hasta:", value=date.today(), key="top_fecha_hasta")
     
     # Tabs para diferentes análisis
     tab_clientes, tab_productos = st.tabs(["👥 Top Clientes", "📦 Top Productos"])
@@ -792,10 +792,10 @@ def exportar_reportes(backend_url: str):
     col1, col2 = st.columns(2)
     
     with col1:
-        fecha_desde = st.date_input("Desde:", value=date.today() - timedelta(days=30))
+        fecha_desde = st.date_input("Desde:", value=date.today() - timedelta(days=30), key="export_fecha_desde")
     
     with col2:
-        fecha_hasta = st.date_input("Hasta:", value=date.today())
+        fecha_hasta = st.date_input("Hasta:", value=date.today(), key="export_fecha_hasta")
     
     # Opciones adicionales
     incluir_graficos = st.checkbox("Incluir Gráficos", value=True)

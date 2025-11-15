@@ -4,11 +4,62 @@ Configura la API, middleware y rutas.
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import (
-    catalogo_cuentas, transacciones, asientos, reportes, periodos,
-    manual_cuentas, balance_inicial, partidas_ajuste, balanza,
-    estados_financieros, facturacion, configuracion
-)
+# Importar routers individualmente para evitar problemas de importación circular
+from app.routes.catalogo_cuentas import router as catalogo_router
+from app.routes.transacciones import router as transacciones_router
+from app.routes.asientos import router as asientos_router
+from app.routes.reportes import router as reportes_router
+from app.routes.periodos import router as periodos_router
+
+# Importar routers adicionales uno por uno para identificar problemas
+try:
+    from app.routes.manual_cuentas import router as manual_cuentas_router
+    manual_cuentas_available = True
+except ImportError as e:
+    print(f"Manual cuentas no disponible: {e}")
+    manual_cuentas_available = False
+
+try:
+    from app.routes.balance_inicial import router as balance_inicial_router
+    balance_inicial_available = True
+except ImportError as e:
+    print(f"Balance inicial no disponible: {e}")
+    balance_inicial_available = False
+
+try:
+    from app.routes.partidas_ajuste import router as partidas_ajuste_router
+    partidas_ajuste_available = True
+except ImportError as e:
+    print(f"Partidas ajuste no disponible: {e}")
+    partidas_ajuste_available = False
+
+try:
+    from app.routes.balanza import router as balanza_router
+    balanza_available = True
+except ImportError as e:
+    print(f"Balanza no disponible: {e}")
+    balanza_available = False
+
+try:
+    from app.routes.estados_financieros import router as estados_financieros_router
+    estados_financieros_available = True
+except ImportError as e:
+    print(f"Estados financieros no disponible: {e}")
+    estados_financieros_available = False
+
+try:
+    from app.routes.facturacion import router as facturacion_router
+    facturacion_available = True
+except ImportError as e:
+    print(f"Facturación no disponible: {e}")
+    facturacion_available = False
+
+try:
+    from app.routes.configuracion import router as configuracion_router
+    configuracion_available = True
+except ImportError as e:
+    print(f"Configuración no disponible: {e}")
+    configuracion_available = False
 from app.db import create_tables
 import os
 
@@ -29,21 +80,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Incluir rutas básicas de la API
-app.include_router(catalogo_cuentas.router)
-app.include_router(transacciones.router)
-app.include_router(asientos.router)
-app.include_router(reportes.router)
-app.include_router(periodos.router)
+# Incluir rutas básicas de la API (siempre disponibles)
+app.include_router(catalogo_router)
+app.include_router(transacciones_router)
+app.include_router(asientos_router)
+app.include_router(reportes_router)
+app.include_router(periodos_router)
 
-# Incluir nuevas rutas de los 9 módulos
-app.include_router(manual_cuentas.router)
-app.include_router(balance_inicial.router)
-app.include_router(partidas_ajuste.router)
-app.include_router(balanza.router)
-app.include_router(estados_financieros.router)
-app.include_router(facturacion.router)
-app.include_router(configuracion.router)
+# Incluir rutas adicionales solo si están disponibles
+if manual_cuentas_available:
+    app.include_router(manual_cuentas_router)
+
+if balance_inicial_available:
+    app.include_router(balance_inicial_router)
+
+if partidas_ajuste_available:
+    app.include_router(partidas_ajuste_router)
+
+if balanza_available:
+    app.include_router(balanza_router)
+
+if estados_financieros_available:
+    app.include_router(estados_financieros_router)
+
+if facturacion_available:
+    app.include_router(facturacion_router)
+
+if configuracion_available:
+    app.include_router(configuracion_router)
 
 @app.on_event("startup")
 def startup_event():
