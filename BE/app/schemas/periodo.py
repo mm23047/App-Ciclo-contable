@@ -9,8 +9,9 @@ from datetime import date
 class PeriodoBase(BaseModel):
     fecha_inicio: date = Field(..., description="Fecha de inicio del período")
     fecha_fin: date = Field(..., description="Fecha de fin del período")
-    tipo_periodo: str = Field(..., pattern="^(MENSUAL|TRIMESTRAL|ANUAL)$", description="Tipo de período")
+    tipo_periodo: str = Field(..., pattern="^(MENSUAL|TRIMESTRAL|SEMESTRAL|ANUAL)$", description="Tipo de período")
     estado: str = Field(default="ABIERTO", pattern="^(ABIERTO|CERRADO)$", description="Estado del período")
+    descripcion: Optional[str] = Field(None, description="Descripción del período")
     
     @validator('fecha_fin')
     def validate_fecha_fin(cls, v, values):
@@ -24,8 +25,9 @@ class PeriodoCreate(PeriodoBase):
 class PeriodoUpdate(BaseModel):
     fecha_inicio: Optional[date] = None
     fecha_fin: Optional[date] = None
-    tipo_periodo: Optional[str] = Field(None, pattern="^(MENSUAL|TRIMESTRAL|ANUAL)$")
+    tipo_periodo: Optional[str] = Field(None, pattern="^(MENSUAL|TRIMESTRAL|SEMESTRAL|ANUAL)$")
     estado: Optional[str] = Field(None, pattern="^(ABIERTO|CERRADO)$")
+    descripcion: Optional[str] = None
 
 class PeriodoRead(PeriodoBase):
     id_periodo: int
