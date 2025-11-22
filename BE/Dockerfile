@@ -1,6 +1,11 @@
 # Dockerfile del Backend para Sistema Contable
 FROM python:3.11-slim
 
+# Configurar UTF-8
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
+
 # Establecer directorio de trabajo
 WORKDIR /app
 

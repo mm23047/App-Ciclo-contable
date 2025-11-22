@@ -738,70 +738,141 @@ def ejecutar_validacion_balance(backend_url: str, id_periodo: int):
     
     try:
         with st.spinner("Ejecutando validación..."):
-            response = requests.get(f"{backend_url}/api/balance-inicial/validacion/{id_periodo}")
+            # Obtener resumen del período
+            response = requests.get(f"{backend_url}/api/balance-inicial/resumen/{id_periodo}")
         
         if response.status_code == 200:
-            validacion = response.json()
+            resumen = response.json()
             
             st.markdown("### 📊 Resultados de la Validación")
             
+            # Extraer datos del resumen
+            resumen_por_tipo = resumen.get('resumen_por_tipo', {})
+            total_general = resumen.get('total_general', {})
+            
+            # Calcular totales por tipo
+            total_activos = float(resumen_por_tipo.get('Activo', {}).get('total_saldo', 0))
+            total_pasivos = float(resumen_por_tipo.get('Pasivo', {}).get('total_saldo', 0))
+            total_capital = float(resumen_por_tipo.get('Capital', {}).get('total_saldo', 0))
+            total_patrimonio = float(resumen_por_tipo.get('Patrimonio', {}).get('total_saldo', 0))
+            
+            # Sumar Capital y Patrimonio
+            total_capital_patrimonio = total_capital + total_patrimonio
+            
+            # Calcular diferencia (Activos - (Pasivos + Capital))
+            diferencia = total_activos - (total_pasivos + total_capital_patrimonio)
+            
             # Estado general
-            if validacion.get('es_valido', False):
-                st.success("✅ El balance inicial es válido")
+            if abs(diferencia) < 0.01:
+                st.success("✅ El balance inicial está balanceado correctamente")
+                st.markdown("**Ecuación contable cumplida:** Activos = Pasivos + Capital/Patrimonio")
             else:
-                st.error("❌ Se encontraron problemas en el balance inicial")
+                st.error("❌ El balance inicial NO está balanceado")
+                if diferencia > 0:
+                    st.warning(f"💡 **Sugerencia:** Faltan ${abs(diferencia):,.2f} en Pasivos + Capital")
+                else:
+                    st.warning(f"💡 **Sugerencia:** Sobran ${abs(diferencia):,.2f} en Pasivos + Capital")
             
             # Ecuación contable
             st.markdown("#### ⚖️ Ecuación Contable")
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                activos = validacion.get('totales', {}).get('activos', 0)
-                st.metric("Activos", f"${activos:,.2f}")
+                st.metric("💰 Activos", f"${total_activos:,.2f}")
             
             with col2:
-                pasivos = validacion.get('totales', {}).get('pasivos', 0)
-                st.metric("Pasivos", f"${pasivos:,.2f}")
+                st.metric("📋 Pasivos", f"${total_pasivos:,.2f}")
             
             with col3:
-                capital = validacion.get('totales', {}).get('capital', 0)
-                st.metric("Capital", f"${capital:,.2f}")
+                label_capital = "🏦 Capital/Patrimonio"
+                st.metric(label_capital, f"${total_capital_patrimonio:,.2f}")
             
             with col4:
-                diferencia = activos - pasivos - capital
                 color = "normal" if abs(diferencia) < 0.01 else "inverse"
-                st.metric("Diferencia", f"${diferencia:,.2f}")
+                delta_text = "Balanceado ✅" if abs(diferencia) < 0.01 else "Desbalanceado ⚠️"
+                st.metric(
+                    "⚖️ Diferencia", 
+                    f"${abs(diferencia):,.2f}",
+                    delta=delta_text,
+                    delta_color=color
+                )
             
-            # Problemas encontrados
-            if 'problemas' in validacion and validacion['problemas']:
-                st.markdown("#### ⚠️ Problemas Encontrados")
-                for problema in validacion['problemas']:
-                    st.warning(f"• {problema}")
-            
-            # Recomendaciones
-            if 'recomendaciones' in validacion and validacion['recomendaciones']:
-                st.markdown("#### 💡 Recomendaciones")
-                for recomendacion in validacion['recomendaciones']:
-                    st.info(f"• {recomendacion}")
+            st.markdown("---")
             
             # Estadísticas adicionales
-            if 'estadisticas' in validacion:
-                stats = validacion['estadisticas']
-                
-                st.markdown("#### 📊 Estadísticas")
-                col1, col2, col3 = st.columns(3)
-                
-                with col1:
-                    st.metric("Cuentas con Saldo", stats.get('cuentas_con_saldo', 0))
-                
-                with col2:
-                    st.metric("Cuentas sin Saldo", stats.get('cuentas_sin_saldo', 0))
-                
-                with col3:
-                    st.metric("Total Configurado", f"${stats.get('total_configurado', 0):,.2f}")
+            st.markdown("#### 📊 Estadísticas del Balance")
+            col1, col2, col3 = st.columns(3)
             
+            total_cuentas = total_general.get('cantidad_cuentas', 0)
+            cuentas_con_saldo = sum(1 for tipo_data in resumen_por_tipo.values() if tipo_data.get('total_saldo', 0) != 0)
+            
+            with col1:
+                st.metric("📝 Cuentas Configuradas", total_cuentas)
+            
+            with col2:
+                st.metric("🔢 Tipos de Cuenta", len(resumen_por_tipo))
+            
+            with col3:
+                total_configurado = total_activos + total_pasivos + total_capital_patrimonio
+                st.metric("💵 Total Configurado", f"${total_configurado:,.2f}")
+            
+            # Detalles por tipo de cuenta
+            if resumen_por_tipo:
+                st.markdown("---")
+                st.markdown("#### 📋 Detalle por Tipo de Cuenta")
+                
+                detalle_data = []
+                
+                emoji_map = {
+                    'Activo': '💰',
+                    'Pasivo': '📋',
+                    'Capital': '🏦',
+                    'Patrimonio': '🏛️',
+                    'Ingreso': '💵',
+                    'Egreso': '💸'
+                }
+                
+                for tipo, data in resumen_por_tipo.items():
+                    detalle_data.append({
+                        'Emoji': emoji_map.get(tipo, '📊'),
+                        'Tipo': tipo,
+                        'Cuentas': data.get('cantidad_cuentas', 0),
+                        'Total': f"${float(data.get('total_saldo', 0)):,.2f}"
+                    })
+                
+                if detalle_data:
+                    df_detalle = pd.DataFrame(detalle_data)
+                    st.dataframe(
+                        df_detalle,
+                        column_config={
+                            "Emoji": st.column_config.TextColumn("", width="small"),
+                            "Tipo": st.column_config.TextColumn("Tipo de Cuenta", width="medium"),
+                            "Cuentas": st.column_config.NumberColumn("# Cuentas", width="small"),
+                            "Total": st.column_config.TextColumn("Total", width="medium"),
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
+            
+            # Recomendaciones
+            st.markdown("---")
+            st.markdown("#### 💡 Recomendaciones")
+            
+            if abs(diferencia) < 0.01:
+                st.info("✅ El balance está correctamente configurado. Puedes proceder con las operaciones del período.")
+            else:
+                st.warning("⚠️ Ajusta los saldos iniciales para que la ecuación contable se cumpla:")
+                st.markdown("- Revisa que todas las cuentas estén correctamente clasificadas (Activo, Pasivo, Capital/Patrimonio)")
+                st.markdown("- Verifica los montos ingresados en cada cuenta")
+                st.markdown("- Recuerda: **Activos = Pasivos + Capital/Patrimonio**")
+            
+            if total_cuentas == 0:
+                st.info("💡 No hay saldos iniciales configurados. Configura al menos una cuenta en la pestaña 'Configurar Saldos'.")
+            
+        elif response.status_code == 404:
+            st.info("💡 No se encontraron saldos iniciales para este período. Configúralos en la pestaña 'Configurar Saldos'.")
         else:
-            st.error(f"Error al ejecutar validación: {response.status_code}")
+            st.error(f"❌ Error al ejecutar validación: {response.status_code}")
             
     except Exception as e:
-        st.error(f"Error en validación: {e}")
+        st.error(f"❌ Error al ejecutar validación: {str(e)}")

@@ -108,6 +108,14 @@ class DetalleFacturaRead(DetalleFacturaBase):
     class Config:
         from_attributes = True
 
+# Schema extendido para detalle con datos del producto
+class DetalleFacturaConProducto(DetalleFacturaRead):
+    nombre_producto: Optional[str] = None
+    codigo_producto: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
 # Esquemas para Factura
 class FacturaBase(BaseModel):
     numero_factura: str = Field(..., max_length=30, description="Número único de la factura")
@@ -151,6 +159,34 @@ class FacturaRead(FacturaBase):
     estado_factura: str
     fecha_creacion: datetime
     detalles: List[DetalleFacturaRead] = []
+    
+    class Config:
+        from_attributes = True
+
+# Schema extendido para factura con datos completos del cliente y productos
+class FacturaCompleta(BaseModel):
+    id_factura: int
+    numero_factura: str
+    serie_factura: str
+    fecha_emision: date
+    fecha_vencimiento: Optional[date]
+    id_cliente: int
+    metodo_pago: Optional[str]
+    condiciones_pago: Optional[str]
+    observaciones: Optional[str]
+    usuario_creacion: str
+    subtotal: Decimal
+    descuento_general: Decimal
+    subtotal_descuento: Decimal
+    impuesto_iva: Decimal
+    otros_impuestos: Decimal
+    retencion_fuente: Decimal
+    reteica: Decimal
+    total: Decimal
+    estado: str  # Alias para estado_factura
+    fecha_creacion: datetime
+    cliente: Optional[ClienteRead] = None
+    detalles: List[DetalleFacturaConProducto] = []
     
     class Config:
         from_attributes = True

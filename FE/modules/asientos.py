@@ -11,35 +11,58 @@ from typing import Optional, List, Dict
 
 def render_page(backend_url: str):
     """Renderizar la página de gestión de asientos contables"""
-    st.header("📝 Gestión de Asientos Contables")
+    st.title("📝 Gestión de Asientos Contables")
+    st.markdown("---")
     
     # Check if a transaction is selected
     current_transaction = st.session_state.get("transaccion_actual")
     
     if not current_transaction:
-        st.warning("⚠️ Debes seleccionar una transacción antes de crear asientos")
-        st.info("💡 Ve a la página de Transacciones y selecciona una transacción existente")
+        st.warning("⚠️ **Debes seleccionar una transacción antes de crear asientos**")
+        st.info("💡 **Pasos a seguir:**")
+        st.markdown("""
+        1. Ve a la página de **Transacciones**
+        2. Selecciona una transacción existente o crea una nueva
+        3. Usa el botón **'🎯 Usar para Asientos'**
+        4. Regresa a esta página para crear los asientos contables
+        """)
+        
+        # Botón directo a transacciones
+        if st.button("📋 Ir a Transacciones", type="primary"):
+            st.info("Navega a Transacciones usando el menú lateral")
         return
     
-    st.info(f"📋 Trabajando con Transacción ID: **{current_transaction}**")
+    # Mostrar info de transacción actual
+    st.success(f"✅ **Trabajando con Transacción ID: {current_transaction}**")
+    
+    # Botón para cambiar de transacción
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("🔄 Cambiar Transacción", type="secondary"):
+            st.session_state.transaccion_actual = None
+            st.rerun()
     
     # Load available accounts
     accounts = load_accounts(backend_url)
     
-    # Create journal entry form
-    with st.expander("➕ Crear Nuevo Asiento", expanded=True):
+    # Tabs para mejor organización
+    tab1, tab2, tab3 = st.tabs(["➕ Nuevo Asiento", "📋 Asientos Registrados", "📊 Validación"])
+    
+    with tab1:
         create_asiento_form(backend_url, current_transaction, accounts)
     
-    # Formulario de edición (solo si hay un asiento seleccionado para editar)
-    if 'edit_asiento_id' in st.session_state and 'edit_asiento_data' in st.session_state:
-        with st.expander("✏️ Modificar Asiento", expanded=True):
-            edit_asiento_form(backend_url, accounts)
+    with tab2:
+        # Formulario de edición (solo si hay un asiento seleccionado para editar)
+        if 'edit_asiento_id' in st.session_state and 'edit_asiento_data' in st.session_state:
+            with st.container():
+                st.markdown("### ✏️ Modificar Asiento")
+                edit_asiento_form(backend_url, accounts)
+                st.markdown("---")
+        
+        list_asientos_for_transaction(backend_url, current_transaction, accounts)
     
-    st.markdown("---")
-    
-    # List journal entries for current transaction
-    st.subheader("📊 Asientos de la Transacción Actual")
-    list_asientos_for_transaction(backend_url, current_transaction, accounts)
+    with tab3:
+        validate_asientos(backend_url, current_transaction)
 
 def load_accounts(backend_url: str) -> List[Dict]:
     """Cargar cuentas disponibles desde la API"""
@@ -58,54 +81,86 @@ def load_accounts(backend_url: str) -> List[Dict]:
 
 def create_asiento_form(backend_url: str, transaction_id: int, accounts: List[Dict]):
     """Formulario para crear un nuevo asiento contable"""
+    st.markdown("### ➕ Crear Nuevo Asiento Contable")
+    st.markdown("Registra los movimientos contables de la transacción")
+    
     if not accounts:
         st.error("❌ No hay cuentas disponibles. Crea cuentas en el catálogo primero.")
+        st.info("💡 Ve al módulo de **Catálogo de Cuentas** para crear las cuentas necesarias")
         return
     
-    with st.form("create_asiento"):
-        col1, col2 = st.columns(2)
+    with st.form("create_asiento", clear_on_submit=True):
+        # Sección de cuenta
+        st.markdown("#### 🏦 Selección de Cuenta")
+        
+        # Account selection con búsqueda mejorada
+        account_options = {
+            f"{acc['codigo_cuenta']} | {acc['nombre_cuenta']} ({acc['tipo_cuenta']})": acc['id_cuenta']
+            for acc in accounts
+            if acc.get('estado') == 'ACTIVA'  # Solo cuentas activas
+        }
+        
+        if not account_options:
+            st.error("❌ No hay cuentas activas disponibles")
+            st.stop()
+        
+        selected_account_display = st.selectbox(
+            "📋 Cuenta Contable *",
+            options=list(account_options.keys()),
+            help="Selecciona la cuenta para registrar el movimiento"
+        )
+        
+        selected_account_id = account_options[selected_account_display]
+        
+        st.markdown("---")
+        st.markdown("#### 💰 Detalle del Movimiento")
+        
+        col1, col2 = st.columns([1, 2])
         
         with col1:
-            # Account selection
-            account_options = {
-                f"{acc['codigo_cuenta']} - {acc['nombre_cuenta']} ({acc['tipo_cuenta']})": acc['id_cuenta']
-                for acc in accounts
-            }
-            
-            selected_account_display = st.selectbox(
-                "Cuenta Contable",
-                options=list(account_options.keys()),
-                help="Selecciona la cuenta para el asiento"
+            # Amount type selection con cards visuales
+            st.markdown("**Tipo de Movimiento:**")
+            amount_type = st.radio(
+                "Selecciona el tipo",
+                ["🟢 Débito (Debe)", "🔴 Crédito (Haber)"],
+                help="📘 Débito: Aumenta activos/gastos | Disminuye pasivos/ingresos\n📕 Crédito: Disminuye activos/gastos | Aumenta pasivos/ingresos",
+                label_visibility="collapsed"
             )
-            
-            selected_account_id = account_options[selected_account_display]
         
         with col2:
-            # Amount type selection
-            amount_type = st.radio(
-                "Tipo de Movimiento",
-                ["Débito (Debe)", "Crédito (Haber)"],
-                help="Selecciona si es un débito o crédito"
+            # Amount input
+            amount = st.number_input(
+                "💵 Monto *",
+                min_value=0.01,
+                value=100.00,
+                step=0.01,
+                format="%.2f",
+                help="Ingresa el monto del asiento (debe ser mayor que 0)"
             )
+            
+            # Mostrar el monto formateado
+            st.info(f"💰 Monto: **${amount:,.2f}**")
         
-        # Amount input
-        amount = st.number_input(
-            "Monto",
-            min_value=0.01,
-            value=0.01,
-            step=0.01,
-            format="%.2f",
-            help="Monto del asiento (debe ser mayor que 0)"
-        )
+        st.markdown("---")
         
         # Optional description
         descripcion_asiento = st.text_area(
-            "Descripción del Asiento (opcional)",
-            height=80,
+            "📝 Descripción del Asiento (Opcional)",
+            height=100,
+            placeholder="Ej: Registro de venta al contado, Provisión de gastos, Pago a proveedores...",
             help="Descripción detallada del asiento contable"
         )
         
-        submitted = st.form_submit_button("Crear Asiento", type="primary")
+        st.markdown("---")
+        
+        # Botones de acción
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col2:
+            clear_button = st.form_submit_button("🔄 Limpiar", type="secondary", use_container_width=True)
+        
+        with col3:
+            submitted = st.form_submit_button("✅ Crear Asiento", type="primary", use_container_width=True)
         
         if submitted:
             # Prepare request data
@@ -349,3 +404,104 @@ def edit_asiento(backend_url: str, asiento_id: int, asiento_data: dict):
             
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Error de conexión: {str(e)}")
+
+def validate_asientos(backend_url: str, transaction_id: int):
+    """Validar que los asientos cumplan con la partida doble"""
+    st.markdown("### 📊 Validación de Partida Doble")
+    st.markdown("Verifica que los asientos cumplan con el principio contable de partida doble")
+    
+    try:
+        response = requests.get(f"{backend_url}/api/asientos/?id_transaccion={transaction_id}", timeout=10)
+        
+        if response.status_code == 200:
+            asientos = response.json()
+            
+            if not asientos:
+                st.info("📭 No hay asientos registrados para validar")
+                st.markdown("""
+                **💡 Recordatorio:**
+                - Cada transacción debe tener al menos 2 asientos
+                - El total de débitos debe ser igual al total de créditos
+                - Esto garantiza el equilibrio contable
+                """)
+                return
+            
+            # Calcular totales
+            total_debe = float(sum(float(a['debe']) for a in asientos))
+            total_haber = float(sum(float(a['haber']) for a in asientos))
+            diferencia = total_debe - total_haber
+            
+            # Métricas visuales
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "🟢 Total Débitos",
+                    f"${total_debe:,.2f}",
+                    help="Suma de todos los débitos"
+                )
+            
+            with col2:
+                st.metric(
+                    "🔴 Total Créditos",
+                    f"${total_haber:,.2f}",
+                    help="Suma de todos los créditos"
+                )
+            
+            with col3:
+                st.metric(
+                    "⚖️ Diferencia",
+                    f"${abs(diferencia):,.2f}",
+                    delta="Balanceado ✅" if abs(diferencia) < 0.01 else "Desbalanceado ⚠️",
+                    delta_color="normal" if abs(diferencia) < 0.01 else "inverse"
+                )
+            
+            st.markdown("---")
+            
+            # Estado de validación
+            if abs(diferencia) < 0.01:
+                st.success("✅ **¡Partida Doble Correcta!**")
+                st.markdown("""
+                Los asientos están correctamente balanceados:
+                - ✅ Débitos = Créditos
+                - ✅ Principio de partida doble cumplido
+                - ✅ La transacción está lista para ser registrada en el libro diario
+                """)
+                
+                # Mostrar resumen
+                st.markdown("#### 📋 Resumen de Asientos")
+                st.info(f"**Total de asientos:** {len(asientos)}")
+                
+            else:
+                st.error("❌ **Error en Partida Doble**")
+                st.markdown(f"""
+                Los asientos NO están balanceados:
+                - ⚠️ Diferencia de: **${abs(diferencia):,.2f}**
+                - ⚠️ {'Faltan créditos' if diferencia > 0 else 'Faltan débitos'}
+                - ⚠️ Debes corregir los asientos antes de continuar
+                """)
+                
+                st.warning(f"💡 **Sugerencia:** {'Agrega créditos por $' + f'{diferencia:,.2f}' if diferencia > 0 else 'Agrega débitos por $' + f'{abs(diferencia):,.2f}'}")
+            
+            # Tabla de asientos para referencia
+            st.markdown("---")
+            st.markdown("#### 📋 Detalle de Asientos")
+            
+            asientos_df = pd.DataFrame(asientos)
+            asientos_df['debe_fmt'] = asientos_df['debe'].apply(lambda x: f"${float(x):,.2f}")
+            asientos_df['haber_fmt'] = asientos_df['haber'].apply(lambda x: f"${float(x):,.2f}")
+            
+            st.dataframe(
+                asientos_df[['id_asiento', 'id_cuenta', 'debe_fmt', 'haber_fmt']],
+                column_config={
+                    "id_asiento": st.column_config.NumberColumn("ID", width="small"),
+                    "id_cuenta": st.column_config.NumberColumn("Cuenta", width="small"),
+                    "debe_fmt": st.column_config.TextColumn("🟢 Debe", width="medium"),
+                    "haber_fmt": st.column_config.TextColumn("🔴 Haber", width="medium"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            
+    except Exception as e:
+        st.error(f"❌ Error al validar asientos: {str(e)}")

@@ -10,7 +10,7 @@ from app.db import get_db
 from app.schemas.facturacion import (
     ClienteCreate, ClienteUpdate, ClienteRead,
     ProductoCreate, ProductoUpdate, ProductoRead,
-    FacturaCreate, FacturaRead, DetalleFacturaCreate,
+    FacturaCreate, FacturaRead, DetalleFacturaCreate, FacturaCompleta,
     ConfiguracionFacturacionCreate, ConfiguracionFacturacionUpdate, ConfiguracionFacturacionRead
 )
 from app.services.facturacion_service import (
@@ -129,6 +129,77 @@ def obtener_factura(
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     return factura
+
+@router.get("/facturas/{factura_id}/completa", response_model=FacturaCompleta)
+def obtener_factura_completa(
+    factura_id: int,
+    db: Session = Depends(get_db)
+):
+    """Obtener factura con datos completos del cliente y productos"""
+    from app.models.facturacion import DetalleFactura
+    
+    factura = db.query(Factura).filter(Factura.id_factura == factura_id).first()
+    if not factura:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Obtener cliente
+    cliente = db.query(Cliente).filter(Cliente.id_cliente == factura.id_cliente).first()
+    
+    # Obtener detalles con información de productos
+    detalles_completos = []
+    for detalle in factura.detalles:
+        detalle_dict = {
+            "id_detalle": detalle.id_detalle,
+            "id_factura": detalle.id_factura,
+            "numero_linea": detalle.numero_linea,
+            "id_producto": detalle.id_producto,
+            "descripcion_personalizada": detalle.descripcion_personalizada,
+            "cantidad": detalle.cantidad,
+            "precio_unitario": detalle.precio_unitario,
+            "descuento_linea": detalle.descuento_linea,
+            "subtotal_linea": detalle.subtotal_linea,
+            "impuesto_linea": detalle.impuesto_linea,
+            "total_linea": detalle.total_linea,
+            "nombre_producto": None,
+            "codigo_producto": None
+        }
+        
+        # Agregar datos del producto si existe
+        if detalle.id_producto:
+            producto = db.query(Producto).filter(Producto.id_producto == detalle.id_producto).first()
+            if producto:
+                detalle_dict["nombre_producto"] = producto.nombre
+                detalle_dict["codigo_producto"] = producto.codigo_producto
+        
+        detalles_completos.append(detalle_dict)
+    
+    # Construir respuesta completa
+    factura_completa = {
+        "id_factura": factura.id_factura,
+        "numero_factura": factura.numero_factura,
+        "serie_factura": factura.serie_factura,
+        "fecha_emision": factura.fecha_emision,
+        "fecha_vencimiento": factura.fecha_vencimiento,
+        "id_cliente": factura.id_cliente,
+        "metodo_pago": factura.metodo_pago,
+        "condiciones_pago": factura.condiciones_pago,
+        "observaciones": factura.observaciones,
+        "usuario_creacion": factura.usuario_creacion,
+        "subtotal": factura.subtotal,
+        "descuento_general": factura.descuento_general,
+        "subtotal_descuento": factura.subtotal_descuento,
+        "impuesto_iva": factura.impuesto_iva,
+        "otros_impuestos": factura.otros_impuestos,
+        "retencion_fuente": factura.retencion_fuente,
+        "reteica": factura.reteica,
+        "total": factura.total,
+        "estado": factura.estado_factura,
+        "fecha_creacion": factura.fecha_creacion,
+        "cliente": cliente,
+        "detalles": detalles_completos
+    }
+    
+    return factura_completa
 
 @router.post("/facturas/{factura_id}/anular")
 def anular_factura_endpoint(

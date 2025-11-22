@@ -48,6 +48,13 @@ except ImportError as e:
     estados_financieros_available = False
 
 try:
+    from app.routes.libro_mayor import router as libro_mayor_router
+    libro_mayor_available = True
+except ImportError as e:
+    print(f"Libro mayor no disponible: {e}")
+    libro_mayor_available = False
+
+try:
     from app.routes.facturacion import router as facturacion_router
     facturacion_available = True
 except ImportError as e:
@@ -117,6 +124,9 @@ if balanza_available:
 
 if estados_financieros_available:
     app.include_router(estados_financieros_router)
+
+if libro_mayor_available:
+    app.include_router(libro_mayor_router)
 
 if facturacion_available:
     app.include_router(facturacion_router)

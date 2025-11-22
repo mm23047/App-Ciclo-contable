@@ -62,9 +62,9 @@ def main():
     st.sidebar.markdown("### 📊 **REPORTES Y CONSULTAS**")
     menu_reportes = {
         "📚 Libro Mayor": "libro_mayor",
+        "📋 Libro Diario": "reportes",
         "⚖️ Balanza de Comprobación": "balanza_comprobacion",
-        "💼 Estados Financieros": "estados_financieros",
-        "📈 Reportes Contables": "reportes"
+        "💼 Estados Financieros": "estados_financieros"
     }
     
     # Combinar todos los menús

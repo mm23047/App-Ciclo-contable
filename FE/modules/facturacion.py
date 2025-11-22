@@ -9,6 +9,15 @@ from datetime import datetime, date
 from typing import Dict, Any, List
 import plotly.express as px
 import plotly.graph_objects as go
+from io import BytesIO
+import json
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+from openpyxl.styles import Font, PatternFill, Alignment
 
 def render_page(backend_url: str):
     """Renderizar página de facturación"""
@@ -145,16 +154,24 @@ def crear_nueva_factura(backend_url: str):
     
     # Formulario para agregar productos
     with st.expander("➕ Agregar Producto/Servicio", expanded=True):
-        col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
+        col1, col2, col3 = st.columns([4, 1.5, 1.5])
         
         with col1:
             opciones_productos = [
-                f"{p['codigo_producto']} - {p['nombre']} - ${float(p.get('precio_venta', 0)):,.2f}"
+                f"{p['codigo_producto']} - {p['nombre']}"
                 for p in productos if p.get('estado_producto') == 'ACTIVO'
             ]
             
             if opciones_productos:
                 producto_sel = st.selectbox("Producto/Servicio:", opciones_productos, key="prod_factura")
+                
+                # Mostrar precio del producto seleccionado
+                if producto_sel:
+                    codigo_prod = producto_sel.split(" - ")[0]
+                    prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
+                    if prod_obj:
+                        precio_producto = float(prod_obj.get('precio_venta', 0))
+                        st.info(f"💰 Precio unitario: **${precio_producto:,.2f}**")
             else:
                 st.warning("No hay productos activos")
                 producto_sel = None
@@ -163,42 +180,34 @@ def crear_nueva_factura(backend_url: str):
             cantidad = st.number_input("Cantidad:", min_value=0.01, value=1.0, step=0.01, key="cant_factura")
         
         with col3:
-            # Obtener precio del producto seleccionado
-            precio_unitario = 0.0
-            if producto_sel:
-                codigo_prod = producto_sel.split(" - ")[0]
-                prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
-                if prod_obj:
-                    precio_unitario = float(prod_obj.get('precio_venta', 0))
-            
-            precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key="precio_factura")
+            descuento = st.number_input("Descuento %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")
         
-        with col4:
-            descuento = st.number_input("Desc. %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")
-        
-        with col5:
-            subtotal = cantidad * precio * (1 - descuento/100)
-            st.metric("Subtotal", f"${subtotal:,.2f}")
-        
-        with col6:
-            st.write("")  # Espaciado
-            if st.button("➕ Agregar", key="add_prod_factura"):
-                if producto_sel and cantidad > 0 and precio > 0:
+        # Botón de agregar
+        col_btn1, col_btn2 = st.columns([3, 1])
+        with col_btn2:
+            if st.button("➕ Agregar Producto", key="add_prod_factura", use_container_width=True, type="primary"):
+                if producto_sel and cantidad > 0:
                     codigo_prod = producto_sel.split(" - ")[0]
                     prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                     
-                    nuevo_item = {
-                        'id_producto': prod_obj['id_producto'],
-                        'codigo_producto': codigo_prod,
-                        'nombre_producto': prod_obj['nombre'],
-                        'cantidad': cantidad,
-                        'precio_unitario': precio,
-                        'descuento_porcentaje': descuento,
-                        'subtotal': subtotal
-                    }
-                    
-                    st.session_state.productos_factura.append(nuevo_item)
-                    st.rerun()
+                    if prod_obj:
+                        precio_unitario = float(prod_obj.get('precio_venta', 0))
+                        subtotal = cantidad * precio_unitario * (1 - descuento/100)
+                        
+                        nuevo_item = {
+                            'id_producto': prod_obj['id_producto'],
+                            'codigo_producto': codigo_prod,
+                            'nombre_producto': prod_obj['nombre'],
+                            'cantidad': cantidad,
+                            'precio_unitario': precio_unitario,
+                            'descuento_porcentaje': descuento,
+                            'subtotal': subtotal
+                        }
+                        
+                        st.session_state.productos_factura.append(nuevo_item)
+                        st.rerun()
+                else:
+                    st.error("⚠️ Selecciona un producto y una cantidad válida")
     
     # Mostrar productos agregados
     if st.session_state.productos_factura:
@@ -599,7 +608,8 @@ def gestion_facturas(backend_url: str):
     with col2:
         numero_factura = st.text_input("Número de factura:", help="Buscar por número específico")
     
-    if st.button("🔍 Buscar Facturas", width="stretch"):
+    if st.button("🔍 Buscar Facturas", use_container_width=True):
+        # Guardar búsqueda en session_state
         buscar_facturas(
             backend_url,
             estado_filtro,
@@ -608,6 +618,10 @@ def gestion_facturas(backend_url: str):
             cliente_filtro,
             numero_factura
         )
+    
+    # Mostrar facturas si existen en session_state
+    if 'facturas_encontradas' in st.session_state and st.session_state.facturas_encontradas:
+        mostrar_facturas(st.session_state.facturas_encontradas, backend_url)
 
 def buscar_facturas(
     backend_url: str,
@@ -645,14 +659,19 @@ def buscar_facturas(
             facturas = response.json()
             
             if facturas:
-                mostrar_facturas(facturas, backend_url)
+                # Guardar en session_state
+                st.session_state.facturas_encontradas = facturas
+                st.rerun()
             else:
                 st.info("📭 No se encontraron facturas con los criterios especificados")
+                st.session_state.facturas_encontradas = None
         else:
             st.error(f"Error al buscar facturas: {response.status_code}")
+            st.session_state.facturas_encontradas = None
             
     except Exception as e:
         st.error(f"Error al buscar facturas: {e}")
+        st.session_state.facturas_encontradas = None
 
 def mostrar_facturas(facturas: List[Dict], backend_url: str):
     """Mostrar lista de facturas"""
@@ -679,6 +698,8 @@ def mostrar_facturas(facturas: List[Dict], backend_url: str):
     with col4:
         st.metric("Pagadas", facturas_pagadas)
     
+    st.markdown("---")
+    
     # Tabla de facturas
     df_facturas = pd.DataFrame(facturas)
     
@@ -700,84 +721,953 @@ def mostrar_facturas(facturas: List[Dict], backend_url: str):
     nombres_columnas = ['Número', 'Fecha', 'Estado', 'Total']
     
     # Verificar que las columnas existan
-    columnas_disponibles = [col for col in columnas_mostrar if col in df_display.columns or f"{col}_fmt" in df_display.columns]
+    columnas_disponibles = [col for col in columnas_mostrar if col in df_display.columns]
     
     if columnas_disponibles:
         df_final = df_display[columnas_disponibles].copy()
         df_final.columns = nombres_columnas[:len(columnas_disponibles)]
         
-        # Mostrar tabla con selección
-        selected_indices = st.dataframe(
+        # Mostrar tabla
+        st.dataframe(
             df_final,
-            width="stretch",
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row"
+            use_container_width=True,
+            hide_index=True
         )
         
-        # Acciones sobre factura seleccionada
-        if selected_indices and selected_indices.selection.rows:
-            selected_row = selected_indices.selection.rows[0]
-            factura_seleccionada = facturas[selected_row]
+        st.markdown("---")
+        st.markdown("### 🎯 Seleccionar Factura para Acciones")
+        
+        # Selector de factura
+        opciones_facturas = [
+            f"{f.get('numero_factura', 'N/A')} - {f.get('estado_factura', 'N/A')} - ${float(f.get('total', 0)):,.2f}"
+            for f in facturas
+        ]
+        
+        factura_seleccionada_idx = st.selectbox(
+            "Selecciona una factura:",
+            range(len(opciones_facturas)),
+            format_func=lambda x: opciones_facturas[x],
+            key="selector_factura_gestion"
+        )
+        
+        if factura_seleccionada_idx is not None:
+            factura_seleccionada = facturas[factura_seleccionada_idx]
             
-            st.markdown("### 🔧 Acciones sobre Factura Seleccionada")
+            st.markdown("---")
+            
+            # Mostrar información de la factura seleccionada
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.info(f"**Factura:** {factura_seleccionada.get('numero_factura', 'N/A')}")
+            with col2:
+                st.info(f"**Estado:** {factura_seleccionada.get('estado_factura', 'N/A')}")
+            with col3:
+                st.info(f"**Total:** ${float(factura_seleccionada.get('total', 0)):,.2f}")
+            
+            st.markdown("### 🔧 Acciones Disponibles")
             
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                if st.button("👁️ Ver Detalles"):
-                    mostrar_detalle_factura(factura_seleccionada)
+                if st.button("👁️ Ver Detalles", use_container_width=True):
+                    st.session_state.mostrar_detalle = True
             
             with col2:
-                if st.button("💰 Marcar como Pagada"):
+                if st.button("💰 Marcar como Pagada", use_container_width=True):
                     marcar_como_pagada(backend_url, factura_seleccionada['id_factura'])
             
             with col3:
-                if st.button("📄 Imprimir"):
-                    st.info("🚧 Función de impresión en desarrollo")
+                if st.button("📥 Descargar", use_container_width=True, type="primary"):
+                    st.session_state.mostrar_descarga = True
             
             with col4:
-                if st.button("❌ Anular"):
-                    if st.checkbox("Confirmar anulación"):
+                if st.button("❌ Anular", use_container_width=True):
+                    st.session_state.mostrar_anular = True
+            
+            # Mostrar secciones según botones presionados
+            if st.session_state.get('mostrar_detalle', False):
+                mostrar_detalle_factura(factura_seleccionada, backend_url)
+                if st.button("🔙 Cerrar Detalles"):
+                    st.session_state.mostrar_detalle = False
+                    st.rerun()
+            
+            if st.session_state.get('mostrar_descarga', False):
+                mostrar_opciones_descarga(factura_seleccionada, backend_url)
+                if st.button("🔙 Cerrar Descarga"):
+                    st.session_state.mostrar_descarga = False
+                    st.rerun()
+            
+            if st.session_state.get('mostrar_anular', False):
+                st.warning("⚠️ ¿Estás seguro de que deseas anular esta factura?")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Sí, Anular", type="primary", use_container_width=True):
                         anular_factura(backend_url, factura_seleccionada['id_factura'])
+                        st.session_state.mostrar_anular = False
+                with col2:
+                    if st.button("❌ Cancelar", use_container_width=True):
+                        st.session_state.mostrar_anular = False
+                        st.rerun()
 
-def mostrar_detalle_factura(factura: Dict):
+def mostrar_detalle_factura(factura: Dict, backend_url: str):
     """Mostrar detalle completo de una factura"""
     
-    with st.expander(f"📄 Detalle Factura {factura.get('numero_factura', 'N/A')}", expanded=True):
+    # Obtener detalle completo de la factura desde el backend
+    try:
+        response = requests.get(f"{backend_url}/api/facturacion/facturas/{factura['id_factura']}")
+        if response.status_code == 200:
+            factura_completa = response.json()
+        else:
+            factura_completa = factura
+    except:
+        factura_completa = factura
+    
+    with st.expander(f"📄 Detalle Factura {factura_completa.get('numero_factura', 'N/A')}", expanded=True):
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("**📋 Información General:**")
-            st.text(f"Número: {factura.get('numero_factura', 'N/A')}")
-            st.text(f"Fecha: {factura.get('fecha_factura', 'N/A')}")
-            st.text(f"Vencimiento: {factura.get('fecha_vencimiento', 'N/A')}")
-            st.text(f"Estado: {factura.get('estado', 'N/A')}")
-            st.text(f"Tipo: {factura.get('tipo_factura', 'N/A')}")
+            st.text(f"Número: {factura_completa.get('numero_factura', 'N/A')}")
+            st.text(f"Fecha: {factura_completa.get('fecha_emision', 'N/A')[:10]}")
+            st.text(f"Vencimiento: {factura_completa.get('fecha_vencimiento', 'N/A')[:10]}")
+            st.text(f"Estado: {factura_completa.get('estado_factura', 'N/A')}")
+            st.text(f"Tipo: {factura_completa.get('tipo_factura', 'N/A')}")
         
         with col2:
             st.markdown("**💰 Totales:**")
-            st.text(f"Subtotal: ${factura.get('subtotal', 0):,.2f}")
-            st.text(f"IVA: ${factura.get('iva', 0):,.2f}")
-            st.text(f"Total: ${factura.get('total', 0):,.2f}")
+            st.text(f"Subtotal: ${float(factura_completa.get('subtotal', 0)):,.2f}")
+            st.text(f"IVA: ${float(factura_completa.get('impuesto_iva', 0)):,.2f}")
+            st.text(f"Total: ${float(factura_completa.get('total', 0)):,.2f}")
         
         # Cliente
         st.markdown("**👤 Cliente:**")
-        st.text(f"Nombre: {factura.get('nombre_cliente', 'N/A')}")
+        cliente_info = factura_completa.get('cliente', {})
+        if isinstance(cliente_info, dict):
+            st.text(f"Nombre: {cliente_info.get('nombre', 'N/A')}")
+            st.text(f"NIT/CC: {cliente_info.get('nit', 'N/A')}")
+            st.text(f"Dirección: {cliente_info.get('direccion', 'N/A')}")
         
         # Items de la factura
-        if 'items' in factura and factura['items']:
+        if 'detalles' in factura_completa and factura_completa['detalles']:
             st.markdown("**📦 Items:**")
             
-            df_items = pd.DataFrame(factura['items'])
+            df_items = pd.DataFrame(factura_completa['detalles'])
             df_items_display = df_items.copy()
             
             # Formatear columnas monetarias
             for col in ['precio_unitario', 'subtotal']:
                 if col in df_items_display.columns:
-                    df_items_display[col] = df_items_display[col].apply(lambda x: f"${x:,.2f}")
+                    df_items_display[col] = df_items_display[col].apply(lambda x: f"${float(x):,.2f}")
             
-            st.dataframe(df_items_display, width="stretch", hide_index=True)
+            # Seleccionar columnas relevantes
+            cols_to_show = []
+            col_names = []
+            
+            if 'nombre_producto' in df_items_display.columns:
+                cols_to_show.append('nombre_producto')
+                col_names.append('Producto')
+            if 'cantidad' in df_items_display.columns:
+                cols_to_show.append('cantidad')
+                col_names.append('Cantidad')
+            if 'precio_unitario' in df_items_display.columns:
+                cols_to_show.append('precio_unitario')
+                col_names.append('Precio Unit.')
+            if 'subtotal' in df_items_display.columns:
+                cols_to_show.append('subtotal')
+                col_names.append('Subtotal')
+            
+            if cols_to_show:
+                df_final = df_items_display[cols_to_show].copy()
+                df_final.columns = col_names
+                st.dataframe(df_final, use_container_width=True, hide_index=True)
+
+
+def mostrar_opciones_descarga(factura: Dict, backend_url: str):
+    """Mostrar opciones de descarga de factura"""
+    
+    st.markdown("---")
+    st.markdown("### 📥 Descargar Factura")
+    
+    # Obtener detalle completo de la factura con datos del cliente y productos
+    try:
+        response = requests.get(f"{backend_url}/api/facturacion/facturas/{factura['id_factura']}/completa")
+        if response.status_code == 200:
+            factura_completa = response.json()
+        else:
+            factura_completa = factura
+    except Exception as e:
+        st.warning(f"⚠️ No se pudieron cargar los datos completos: {e}")
+        factura_completa = factura
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📄 Descargar PDF", use_container_width=True, type="primary"):
+            generar_pdf_factura(factura_completa, backend_url)
+    
+    with col2:
+        if st.button("📊 Descargar Excel", use_container_width=True):
+            generar_excel_factura(factura_completa, backend_url)
+    
+    with col3:
+        if st.button("📋 Descargar JSON", use_container_width=True):
+            generar_json_factura(factura_completa, backend_url)
+
+
+def generar_pdf_factura(factura: Dict, backend_url: str):
+    """Generar factura en formato PDF profesional tipo DIAN"""
+    
+    try:
+        # Obtener configuración de empresa e IVA
+        iva_porcentaje = 19.0  # Valor por defecto
+        empresa_nombre = "EMPRESA"
+        empresa_nit = "N/A"
+        empresa_direccion = "N/A"
+        empresa_telefono = "N/A"
+        empresa_email = "N/A"
+        try:
+            response_config = requests.get(f"{backend_url}/api/facturacion/configuracion")
+            if response_config.status_code == 200:
+                config = response_config.json()
+                iva_porcentaje = float(config.get('iva_porcentaje', 19.0))
+                empresa_nombre = config.get('empresa_nombre', 'EMPRESA')
+                empresa_nit = config.get('empresa_nit', 'N/A')
+                empresa_direccion = config.get('empresa_direccion', 'N/A')
+                empresa_telefono = config.get('empresa_telefono', 'N/A')
+                empresa_email = config.get('empresa_email', 'N/A')
+        except:
+            pass
+        
+        with st.spinner("📄 Generando PDF..."):
+            buffer = BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter, 
+                                   rightMargin=0.6*inch, leftMargin=0.6*inch,
+                                   topMargin=0.4*inch, bottomMargin=0.4*inch)
+            
+            # Contenedor de elementos
+            elements = []
+            styles = getSampleStyleSheet()
+            
+            # Estilos personalizados
+            company_style = ParagraphStyle(
+                'CompanyName',
+                parent=styles['Heading1'],
+                fontSize=18,
+                textColor=colors.HexColor('#1a1a1a'),
+                spaceAfter=4,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            title_style = ParagraphStyle(
+                'InvoiceTitle',
+                parent=styles['Heading1'],
+                fontSize=16,
+                textColor=colors.white,
+                spaceAfter=0,
+                alignment=TA_CENTER,
+                fontName='Helvetica-Bold'
+            )
+            
+            header_style = ParagraphStyle(
+                'SectionHeader',
+                parent=styles['Heading2'],
+                fontSize=11,
+                textColor=colors.HexColor('#2c3e50'),
+                spaceAfter=8,
+                fontName='Helvetica-Bold'
+            )
+            
+            normal_style = ParagraphStyle(
+                'NormalText',
+                parent=styles['Normal'],
+                fontSize=9,
+                textColor=colors.HexColor('#333333'),
+                leading=12
+            )
+            
+            small_style = ParagraphStyle(
+                'SmallText',
+                parent=styles['Normal'],
+                fontSize=8,
+                textColor=colors.HexColor('#666666'),
+                leading=10
+            )
+            
+            # Encabezado con nombre empresa
+            empresa_nombre_p = Paragraph(f"<b>{empresa_nombre.upper()}</b>", company_style)
+            elements.append(empresa_nombre_p)
+            
+            empresa_info = Paragraph(f"NIT: {empresa_nit}", small_style)
+            elements.append(empresa_info)
+            
+            empresa_contacto = Paragraph(f"{empresa_direccion} | Tel: {empresa_telefono} | {empresa_email}", small_style)
+            elements.append(empresa_contacto)
+            
+            elements.append(Spacer(1, 0.15*inch))
+            
+            # Rectángulo con título FACTURA
+            numero_factura = factura.get('numero_factura', 'N/A')
+            estado = factura.get('estado', 'N/A')
+            
+            # Tabla de título con color
+            titulo_data = [[Paragraph("FACTURA ELECTRÓNICA DE VENTA", title_style)]]
+            tabla_titulo = Table(titulo_data, colWidths=[7*inch])
+            tabla_titulo.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2c3e50')),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ]))
+            elements.append(tabla_titulo)
+            
+            elements.append(Spacer(1, 0.1*inch))
+            
+            # Información de la factura y cliente en dos columnas
+            fecha_emision = factura.get('fecha_emision', 'N/A')[:10] if factura.get('fecha_emision') else 'N/A'
+            fecha_venc = factura.get('fecha_vencimiento', 'N/A')[:10] if factura.get('fecha_vencimiento') else 'N/A'
+            
+            cliente_info = factura.get('cliente', {})
+            cliente_nombre = cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
+            cliente_nit = cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
+            cliente_dir = cliente_info.get('direccion', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
+            cliente_tel = cliente_info.get('telefono_principal', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
+            cliente_email = cliente_info.get('email', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
+            
+            info_factura_cliente = [
+                [
+                    Paragraph("<b>DATOS DE LA FACTURA</b>", header_style),
+                    Paragraph("<b>DATOS DEL CLIENTE</b>", header_style)
+                ],
+                [
+                    Paragraph(f"<b>No. Factura:</b> {numero_factura}", normal_style),
+                    Paragraph(f"<b>Razón Social:</b> {cliente_nombre}", normal_style)
+                ],
+                [
+                    Paragraph(f"<b>Fecha Emisión:</b> {fecha_emision}", normal_style),
+                    Paragraph(f"<b>NIT/CC:</b> {cliente_nit}", normal_style)
+                ],
+                [
+                    Paragraph(f"<b>Fecha Vencimiento:</b> {fecha_venc}", normal_style),
+                    Paragraph(f"<b>Dirección:</b> {cliente_dir}", normal_style)
+                ],
+                [
+                    Paragraph(f"<b>Estado:</b> {estado.upper()}", normal_style),
+                    Paragraph(f"<b>Teléfono:</b> {cliente_tel}", normal_style)
+                ],
+                [
+                    "",
+                    Paragraph(f"<b>Email:</b> {cliente_email}", normal_style)
+                ]
+            ]
+            
+            tabla_info = Table(info_factura_cliente, colWidths=[3.5*inch, 3.5*inch])
+            tabla_info.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#e8f4f8')),
+                ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#e8f4f8')),
+                ('BOX', (0, 0), (0, -1), 1, colors.HexColor('#3498db')),
+                ('BOX', (1, 0), (1, -1), 1, colors.HexColor('#3498db')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            
+            elements.append(tabla_info)
+            elements.append(Spacer(1, 0.2*inch))
+            
+            # Detalle de productos con numeración
+            detalle_header = Paragraph("DETALLE DE LA OPERACIÓN", header_style)
+            elements.append(detalle_header)
+            
+            detalles = factura.get('detalles', [])
+            if detalles:
+                data_items = [[
+                    Paragraph('<b>Item</b>', normal_style),
+                    Paragraph('<b>Código</b>', normal_style),
+                    Paragraph('<b>Descripción</b>', normal_style),
+                    Paragraph('<b>Cant.</b>', normal_style),
+                    Paragraph('<b>Vlr. Unitario</b>', normal_style),
+                    Paragraph('<b>Vlr. Total</b>', normal_style)
+                ]]
+                
+                for idx, item in enumerate(detalles, 1):
+                    codigo_producto = item.get('codigo_producto', 'N/A')
+                    nombre = item.get('nombre_producto', 'Producto')
+                    cantidad = item.get('cantidad', 0)
+                    precio_unit = float(item.get('precio_unitario', 0))
+                    subtotal = float(item.get('subtotal_linea', 0))
+                    
+                    data_items.append([
+                        Paragraph(f"{idx}", normal_style),
+                        Paragraph(codigo_producto, normal_style),
+                        Paragraph(nombre, normal_style),
+                        Paragraph(f"{cantidad}", normal_style),
+                        Paragraph(f"${precio_unit:,.2f}", normal_style),
+                        Paragraph(f"${subtotal:,.2f}", normal_style)
+                    ])
+                
+                tabla_items = Table(data_items, colWidths=[0.4*inch, 0.8*inch, 2.8*inch, 0.6*inch, 1.2*inch, 1.2*inch])
+                tabla_items.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 9),
+                    ('TOPPADDING', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#bdc3c7')),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+                    ('ALIGN', (0, 1), (1, -1), 'CENTER'),
+                    ('ALIGN', (2, 1), (2, -1), 'LEFT'),
+                    ('ALIGN', (3, 1), (-1, -1), 'RIGHT'),
+                    ('TOPPADDING', (0, 1), (-1, -1), 8),
+                    ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                
+                elements.append(tabla_items)
+                elements.append(Spacer(1, 0.15*inch))
+            
+            # Observaciones y Totales lado a lado
+            observaciones = factura.get('observaciones') or 'Sin observaciones'
+            
+            obs_totales_data = [
+                [
+                    Paragraph("<b>OBSERVACIONES:</b>", normal_style),
+                    ""
+                ],
+                [
+                    Paragraph(str(observaciones), small_style),
+                    ""
+                ]
+            ]
+            
+            # Calcular totales
+            subtotal = float(factura.get('subtotal', 0))
+            iva = float(factura.get('impuesto_iva', 0))
+            total = float(factura.get('total', 0))
+            
+            # Tabla de totales separada
+            totales_data = [
+                [Paragraph('<b>Subtotal:</b>', normal_style), Paragraph(f"${subtotal:,.2f}", normal_style)],
+                [Paragraph(f'<b>IVA ({iva_porcentaje:.0f}%):</b>', normal_style), Paragraph(f"${iva:,.2f}", normal_style)],
+                [Paragraph('<b>TOTAL A PAGAR:</b>', header_style), Paragraph(f"<b>${total:,.2f}</b>", header_style)]
+            ]
+            
+            tabla_totales = Table(totales_data, colWidths=[2*inch, 1.5*inch])
+            tabla_totales.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('LINEABOVE', (0, 2), (-1, 2), 2, colors.HexColor('#2c3e50')),
+                ('LINEBELOW', (0, 2), (-1, 2), 2, colors.HexColor('#2c3e50')),
+                ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#e8f4f8')),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+            ]))
+            
+            # Tabla que combina observaciones y totales
+            contenedor = [[
+                Paragraph(f"<b>OBSERVACIONES:</b><br/>{str(observaciones)}", normal_style),
+                tabla_totales
+            ]]
+            
+            tabla_contenedor = Table(contenedor, colWidths=[3.5*inch, 3.5*inch])
+            tabla_contenedor.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (0, 0), 'TOP'),
+                ('VALIGN', (1, 0), (1, 0), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (0, 0), 0),
+                ('RIGHTPADDING', (1, 0), (1, 0), 0),
+            ]))
+            
+            elements.append(tabla_contenedor)
+            elements.append(Spacer(1, 0.3*inch))
+            
+            # Información legal y pie de página
+            legal_style = ParagraphStyle(
+                'Legal',
+                parent=styles['Normal'],
+                fontSize=7,
+                textColor=colors.HexColor('#7f8c8d'),
+                alignment=TA_CENTER,
+                leading=9
+            )
+            
+            cufe = "CUFE: " + "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6"
+            
+            legal_info = f"""
+            <b>INFORMACIÓN TRIBUTARIA</b><br/>
+            {cufe}<br/>
+            Factura electrónica generada de acuerdo a la Resolución DIAN 000042 del 05 de mayo de 2020<br/>
+            Esta factura es un título valor según Art. 772 del Código de Comercio<br/>
+            <b>Gracias por su compra - Conserve este documento para efectos tributarios</b>
+            """
+            
+            pie = Paragraph(legal_info, legal_style)
+            elements.append(pie)
+            
+            # Construir PDF
+            doc.build(elements)
+            
+            # Preparar descarga
+            buffer.seek(0)
+            nombre_archivo = f"FV_{numero_factura.replace('/', '-')}_{fecha_emision.replace('-', '')}.pdf"
+            
+            st.download_button(
+                label="📥 Descargar PDF",
+                data=buffer,
+                file_name=nombre_archivo,
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
+            
+            st.success("✅ Factura PDF generada exitosamente")
+            
+    except Exception as e:
+        st.error(f"❌ Error al generar PDF: {str(e)}")
+        st.exception(e)
+
+
+def generar_excel_factura(factura: Dict, backend_url: str):
+    """Generar factura en formato Excel profesional tipo DIAN"""
+    
+    try:
+        # Obtener configuración de empresa e IVA
+        iva_porcentaje = 19.0  # Valor por defecto
+        empresa_nombre = "EMPRESA"
+        empresa_nit = "N/A"
+        empresa_direccion = "N/A"
+        empresa_telefono = "N/A"
+        empresa_email = "N/A"
+        try:
+            response_config = requests.get(f"{backend_url}/api/facturacion/configuracion")
+            if response_config.status_code == 200:
+                config = response_config.json()
+                iva_porcentaje = float(config.get('iva_porcentaje', 19.0))
+                empresa_nombre = config.get('empresa_nombre', 'EMPRESA')
+                empresa_nit = config.get('empresa_nit', 'N/A')
+                empresa_direccion = config.get('empresa_direccion', 'N/A')
+                empresa_telefono = config.get('empresa_telefono', 'N/A')
+                empresa_email = config.get('empresa_email', 'N/A')
+        except:
+            pass
+        
+        with st.spinner("📊 Generando Excel..."):
+            output = BytesIO()
+            
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                workbook = writer.book
+                
+                # === HOJA 1: FACTURA COMPLETA ===
+                ws_factura = workbook.create_sheet('FACTURA', 0)
+                
+                # Encabezado empresa
+                ws_factura['A1'] = empresa_nombre.upper()
+                ws_factura['A1'].font = Font(name='Arial', size=16, bold=True)
+                
+                ws_factura['A2'] = f'NIT: {empresa_nit}'
+                ws_factura['A2'].font = Font(name='Arial', size=9)
+                
+                ws_factura['A3'] = f'{empresa_direccion} | Tel: {empresa_telefono} | {empresa_email}'
+                ws_factura['A3'].font = Font(name='Arial', size=9, color='666666')
+                
+                # Título factura
+                ws_factura.merge_cells('A5:F5')
+                ws_factura['A5'] = 'FACTURA ELECTRÓNICA DE VENTA'
+                ws_factura['A5'].font = Font(name='Arial', size=14, bold=True, color='FFFFFF')
+                ws_factura['A5'].fill = PatternFill(start_color='2c3e50', end_color='2c3e50', fill_type='solid')
+                ws_factura['A5'].alignment = Alignment(horizontal='center', vertical='center')
+                
+                # Datos de la factura
+                row = 7
+                ws_factura[f'A{row}'] = 'DATOS DE LA FACTURA'
+                ws_factura[f'A{row}'].font = Font(name='Arial', size=11, bold=True)
+                ws_factura[f'A{row}'].fill = PatternFill(start_color='e8f4f8', end_color='e8f4f8', fill_type='solid')
+                ws_factura.merge_cells(f'A{row}:C{row}')
+                
+                ws_factura[f'D{row}'] = 'DATOS DEL CLIENTE'
+                ws_factura[f'D{row}'].font = Font(name='Arial', size=11, bold=True)
+                ws_factura[f'D{row}'].fill = PatternFill(start_color='e8f4f8', end_color='e8f4f8', fill_type='solid')
+                ws_factura.merge_cells(f'D{row}:F{row}')
+                
+                cliente_info = factura.get('cliente', {})
+                
+                datos_factura_cliente = [
+                    ('No. Factura:', factura.get('numero_factura', 'N/A'), 'Razón Social:', cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('Fecha Emisión:', factura.get('fecha_emision', 'N/A')[:10], 'NIT/CC:', cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('Fecha Vencimiento:', factura.get('fecha_vencimiento', 'N/A')[:10], 'Dirección:', cliente_info.get('direccion', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('Estado:', factura.get('estado', 'N/A').upper(), 'Teléfono:', cliente_info.get('telefono_principal', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('', '', 'Email:', cliente_info.get('email', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                ]
+                
+                row += 1
+                for campo_fac, valor_fac, campo_cli, valor_cli in datos_factura_cliente:
+                    ws_factura[f'A{row}'] = campo_fac
+                    ws_factura[f'A{row}'].font = Font(name='Arial', size=9, bold=True)
+                    ws_factura[f'B{row}'] = valor_fac
+                    ws_factura[f'B{row}'].font = Font(name='Arial', size=9)
+                    
+                    ws_factura[f'D{row}'] = campo_cli
+                    ws_factura[f'D{row}'].font = Font(name='Arial', size=9, bold=True)
+                    ws_factura[f'E{row}'] = valor_cli
+                    ws_factura[f'E{row}'].font = Font(name='Arial', size=9)
+                    ws_factura.merge_cells(f'E{row}:F{row}')
+                    row += 1
+                
+                # Detalle de productos
+                row += 2
+                ws_factura[f'A{row}'] = 'DETALLE DE LA OPERACIÓN'
+                ws_factura[f'A{row}'].font = Font(name='Arial', size=11, bold=True)
+                ws_factura.merge_cells(f'A{row}:F{row}')
+                
+                row += 1
+                headers = ['Item', 'Código', 'Descripción', 'Cant.', 'Vlr. Unitario', 'Vlr. Total']
+                for col, header in enumerate(headers, 1):
+                    cell = ws_factura.cell(row=row, column=col, value=header)
+                    cell.font = Font(name='Arial', size=9, bold=True, color='FFFFFF')
+                    cell.fill = PatternFill(start_color='34495e', end_color='34495e', fill_type='solid')
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                detalles = factura.get('detalles', [])
+                for idx, item in enumerate(detalles, 1):
+                    row += 1
+                    ws_factura[f'A{row}'] = idx
+                    ws_factura[f'B{row}'] = item.get('codigo_producto', 'N/A')
+                    ws_factura[f'C{row}'] = item.get('nombre_producto', 'N/A')
+                    ws_factura[f'D{row}'] = item.get('cantidad', 0)
+                    ws_factura[f'E{row}'] = float(item.get('precio_unitario', 0))
+                    ws_factura[f'F{row}'] = float(item.get('subtotal_linea', 0))
+                    
+                    # Formato moneda
+                    ws_factura[f'E{row}'].number_format = '$#,##0.00'
+                    ws_factura[f'F{row}'].number_format = '$#,##0.00'
+                    ws_factura[f'D{row}'].alignment = Alignment(horizontal='center')
+                    
+                    # Alternar colores
+                    if idx % 2 == 0:
+                        for col in range(1, 7):
+                            ws_factura.cell(row=row, column=col).fill = PatternFill(start_color='f8f9fa', end_color='f8f9fa', fill_type='solid')
+                
+                # Observaciones y totales
+                row += 2
+                ws_factura[f'A{row}'] = 'OBSERVACIONES:'
+                ws_factura[f'A{row}'].font = Font(name='Arial', size=9, bold=True)
+                ws_factura.merge_cells(f'A{row}:C{row}')
+                
+                row += 1
+                ws_factura[f'A{row}'] = factura.get('observaciones') or 'Sin observaciones'
+                ws_factura[f'A{row}'].font = Font(name='Arial', size=9)
+                ws_factura.merge_cells(f'A{row}:C{row+2}')
+                ws_factura[f'A{row}'].alignment = Alignment(wrap_text=True, vertical='top')
+                
+                # Totales
+                row_totales = row
+                ws_factura[f'E{row_totales}'] = 'Subtotal:'
+                ws_factura[f'E{row_totales}'].font = Font(name='Arial', size=9, bold=True)
+                ws_factura[f'E{row_totales}'].alignment = Alignment(horizontal='right')
+                ws_factura[f'F{row_totales}'] = float(factura.get('subtotal', 0))
+                ws_factura[f'F{row_totales}'].number_format = '$#,##0.00'
+                
+                row_totales += 1
+                ws_factura[f'E{row_totales}'] = f'IVA ({iva_porcentaje:.0f}%):'
+                ws_factura[f'E{row_totales}'].font = Font(name='Arial', size=9, bold=True)
+                ws_factura[f'E{row_totales}'].alignment = Alignment(horizontal='right')
+                ws_factura[f'F{row_totales}'] = float(factura.get('impuesto_iva', 0))
+                ws_factura[f'F{row_totales}'].number_format = '$#,##0.00'
+                
+                row_totales += 1
+                ws_factura[f'E{row_totales}'] = 'TOTAL A PAGAR:'
+                ws_factura[f'E{row_totales}'].font = Font(name='Arial', size=11, bold=True)
+                ws_factura[f'E{row_totales}'].alignment = Alignment(horizontal='right')
+                ws_factura[f'E{row_totales}'].fill = PatternFill(start_color='e8f4f8', end_color='e8f4f8', fill_type='solid')
+                ws_factura[f'F{row_totales}'] = float(factura.get('total', 0))
+                ws_factura[f'F{row_totales}'].number_format = '$#,##0.00'
+                ws_factura[f'F{row_totales}'].font = Font(name='Arial', size=11, bold=True)
+                ws_factura[f'F{row_totales}'].fill = PatternFill(start_color='e8f4f8', end_color='e8f4f8', fill_type='solid')
+                
+                # Pie de página legal
+                row += 5
+                ws_factura.merge_cells(f'A{row}:F{row+2}')
+                legal_text = (
+                    'INFORMACIÓN TRIBUTARIA\n'
+                    'CUFE: A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6\n'
+                    'Factura electrónica generada de acuerdo a la Resolución DIAN 000042 del 05 de mayo de 2020\n'
+                    'Esta factura es un título valor según Art. 772 del Código de Comercio'
+                )
+                ws_factura[f'A{row}'] = legal_text
+                ws_factura[f'A{row}'].font = Font(name='Arial', size=7, color='7f8c8d')
+                ws_factura[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                
+                # Ajustar anchos de columna
+                ws_factura.column_dimensions['A'].width = 8
+                ws_factura.column_dimensions['B'].width = 15
+                ws_factura.column_dimensions['C'].width = 30
+                ws_factura.column_dimensions['D'].width = 10
+                ws_factura.column_dimensions['E'].width = 18
+                ws_factura.column_dimensions['F'].width = 18
+                
+                # === HOJA 2: RESUMEN EJECUTIVO ===
+                resumen_data = {
+                    '': [
+                        'NÚMERO DE FACTURA',
+                        'FECHA DE EMISIÓN',
+                        'CLIENTE',
+                        'NIT/CC',
+                        '',
+                        'SUBTOTAL',
+                        f'IVA ({iva_porcentaje:.0f}%)',
+                        'TOTAL A PAGAR',
+                        '',
+                        'ESTADO',
+                        'ITEMS',
+                        'FECHA VENCIMIENTO'
+                    ],
+                    'INFORMACIÓN': [
+                        factura.get('numero_factura', 'N/A'),
+                        factura.get('fecha_emision', 'N/A')[:10],
+                        cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A',
+                        cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A',
+                        '',
+                        float(factura.get('subtotal', 0)),
+                        float(factura.get('impuesto_iva', 0)),
+                        float(factura.get('total', 0)),
+                        '',
+                        factura.get('estado', 'N/A').upper(),
+                        len(detalles),
+                        factura.get('fecha_vencimiento', 'N/A')[:10]
+                    ]
+                }
+                
+                df_resumen = pd.DataFrame(resumen_data)
+                df_resumen.to_excel(writer, sheet_name='RESUMEN', index=False)
+                
+                ws_resumen = writer.sheets['RESUMEN']
+                for row in ws_resumen.iter_rows(min_row=1, max_row=1):
+                    for cell in row:
+                        cell.font = Font(bold=True, size=12, color='FFFFFF')
+                        cell.fill = PatternFill(start_color='2c3e50', end_color='2c3e50', fill_type='solid')
+                
+                # Formatear montos en resumen
+                ws_resumen['B7'].number_format = '$#,##0.00'
+                ws_resumen['B8'].number_format = '$#,##0.00'
+                ws_resumen['B9'].number_format = '$#,##0.00'
+                ws_resumen['B9'].font = Font(bold=True, size=12)
+                
+                ws_resumen.column_dimensions['A'].width = 25
+                ws_resumen.column_dimensions['B'].width = 30
+                
+            # Eliminar hoja por defecto
+            if 'Sheet' in workbook.sheetnames:
+                workbook.remove(workbook['Sheet'])
+            
+            output.seek(0)
+            numero_factura = factura.get('numero_factura', 'N/A').replace('/', '-')
+            fecha = factura.get('fecha_emision', 'N/A')[:10].replace('-', '')
+            nombre_archivo = f"FV_{numero_factura}_{fecha}.xlsx"
+            
+            st.download_button(
+                label="📥 Descargar Excel",
+                data=output,
+                file_name=nombre_archivo,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                use_container_width=True
+            )
+            
+            st.success("✅ Factura Excel generada exitosamente")
+            
+    except Exception as e:
+        st.error(f"❌ Error al generar Excel: {str(e)}")
+        st.exception(e)
+
+
+def generar_json_factura(factura: Dict, backend_url: str):
+    """Generar factura en formato JSON estructurado compatible DIAN"""
+    
+    try:
+        # Obtener configuración de empresa e IVA
+        iva_porcentaje = 19.0  # Valor por defecto
+        empresa_nombre = "EMPRESA"
+        empresa_nit = "N/A"
+        empresa_direccion = "N/A"
+        empresa_telefono = "N/A"
+        empresa_email = "N/A"
+        empresa_web = ""
+        try:
+            response_config = requests.get(f"{backend_url}/api/facturacion/configuracion")
+            if response_config.status_code == 200:
+                config = response_config.json()
+                iva_porcentaje = float(config.get('iva_porcentaje', 19.0))
+                empresa_nombre = config.get('empresa_nombre', 'EMPRESA')
+                empresa_nit = config.get('empresa_nit', 'N/A')
+                empresa_direccion = config.get('empresa_direccion', 'N/A')
+                empresa_telefono = config.get('empresa_telefono', 'N/A')
+                empresa_email = config.get('empresa_email', 'N/A')
+                empresa_web = config.get('empresa_web', '')
+        except:
+            pass
+        
+        with st.spinner("📋 Generando JSON..."):
+            
+            # Obtener información del cliente
+            cliente_info = factura.get('cliente', {})
+            if not isinstance(cliente_info, dict):
+                cliente_info = {}
+            
+            # Calcular totales
+            detalles = factura.get('detalles', [])
+            subtotal = float(factura.get('subtotal', 0))
+            iva = float(factura.get('impuesto_iva', 0))
+            total = float(factura.get('total', 0))
+            
+            # Estructurar según formato DIAN
+            factura_json = {
+                "documento": {
+                    "tipo": "FACTURA_ELECTRONICA",
+                    "version": "1.0",
+                    "fecha_generacion": datetime.now().isoformat(),
+                    "ambiente": "PRODUCCION"
+                },
+                "emisor": {
+                    "razon_social": empresa_nombre,
+                    "nit": empresa_nit,
+                    "regimen": "COMUN",
+                    "responsabilidades_fiscales": ["O-13", "R-99-PN"],
+                    "direccion": {
+                        "calle": empresa_direccion,
+                        "ciudad": "N/A",
+                        "departamento": "N/A",
+                        "codigo_postal": "N/A",
+                        "pais": "SV"
+                    },
+                    "contacto": {
+                        "telefono": empresa_telefono,
+                        "email": empresa_email,
+                        "sitio_web": empresa_web
+                    }
+                },
+                "factura": {
+                    "numero": factura.get('numero_factura', 'N/A'),
+                    "prefijo": "FV",
+                    "consecutivo": factura.get('numero_factura', 'N/A').replace('FV-', ''),
+                    "fecha_emision": factura.get('fecha_emision', 'N/A'),
+                    "hora_emision": datetime.now().strftime("%H:%M:%S"),
+                    "fecha_vencimiento": factura.get('fecha_vencimiento', 'N/A'),
+                    "estado": factura.get('estado', 'N/A').upper(),
+                    "tipo_operacion": "VENTA_NACIONAL",
+                    "forma_pago": "CONTADO",
+                    "medio_pago": "EFECTIVO",
+                    "moneda": "COP"
+                },
+                "adquiriente": {
+                    "tipo_persona": "JURIDICA",
+                    "tipo_documento": "NIT",
+                    "numero_documento": cliente_info.get('nit', 'N/A'),
+                    "razon_social": cliente_info.get('nombre', 'N/A'),
+                    "nombre_comercial": cliente_info.get('nombre', 'N/A'),
+                    "regimen": "SIMPLIFICADO",
+                    "responsabilidades_fiscales": ["R-99-PN"],
+                    "direccion": {
+                        "calle": cliente_info.get('direccion', 'N/A'),
+                        "ciudad": "N/A",
+                        "departamento": "N/A",
+                        "pais": "CO"
+                    },
+                    "contacto": {
+                        "telefono": cliente_info.get('telefono_principal', 'N/A'),
+                        "email": cliente_info.get('email', 'N/A')
+                    }
+                },
+                "items": [
+                    {
+                        "numero_linea": idx,
+                        "codigo_producto": item.get('codigo_producto', 'N/A'),
+                        "codigo_estandar": f"999{item.get('producto_id', '000')}",
+                        "descripcion": item.get('nombre_producto', 'N/A'),
+                        "cantidad": float(item.get('cantidad', 0)),
+                        "unidad_medida": "UND",
+                        "precio_unitario": float(item.get('precio_unitario', 0)),
+                        "valor_bruto": float(item.get('subtotal_linea', 0)),
+                        "descuento": 0.0,
+                        "cargo": 0.0,
+                        "valor_neto": float(item.get('subtotal_linea', 0)),
+                        "impuestos": [
+                            {
+                                "tipo": "IVA",
+                                "base": float(item.get('subtotal_linea', 0)),
+                                "porcentaje": iva_porcentaje,
+                                "valor": float(item.get('subtotal_linea', 0)) * (iva_porcentaje / 100)
+                            }
+                        ]
+                    }
+                    for idx, item in enumerate(detalles, 1)
+                ],
+                "totales": {
+                    "cantidad_lineas": len(detalles),
+                    "subtotal": subtotal,
+                    "descuentos": 0.0,
+                    "cargos": 0.0,
+                    "base_imponible": subtotal,
+                    "impuestos": [
+                        {
+                            "tipo": "IVA",
+                            "base": subtotal,
+                            "porcentaje": iva_porcentaje,
+                            "valor": iva
+                        }
+                    ],
+                    "total_impuestos": iva,
+                    "total_a_pagar": total,
+                    "moneda": "COP",
+                    "total_en_letras": f"{int(total)} PESOS M/CTE"
+                },
+                "observaciones": factura.get('observaciones') or 'Sin observaciones',
+                "informacion_adicional": {
+                    "nota": "Gracias por su compra",
+                    "terminos_condiciones": "Esta factura es un título valor según Art. 772 del Código de Comercio",
+                    "resolucion_dian": "000042 del 05 de mayo de 2020",
+                    "rango_autorizacion": "FV-1 hasta FV-99999",
+                    "vigencia_autorizacion": "2025-12-31"
+                },
+                "firma_electronica": {
+                    "cufe": "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8S9T0U1V2W3X4Y5Z6",
+                    "algoritmo": "SHA-384",
+                    "fecha_firma": datetime.now().isoformat(),
+                    "politica_firma": "https://facturaelectronica.dian.gov.co/politicadefirma/v1"
+                }
+            }
+            
+            # Convertir a JSON con formato
+            json_str = json.dumps(factura_json, indent=2, ensure_ascii=False)
+            json_bytes = json_str.encode('utf-8')
+            
+            numero_factura = factura.get('numero_factura', 'N/A').replace('/', '-')
+            fecha = factura.get('fecha_emision', 'N/A')[:10].replace('-', '')
+            nombre_archivo = f"FV_{numero_factura}_{fecha}.json"
+            
+            st.download_button(
+                label="📥 Descargar JSON",
+                data=json_bytes,
+                file_name=nombre_archivo,
+                mime="application/json",
+                type="primary",
+                use_container_width=True
+            )
+            
+            st.success("✅ Factura JSON generada exitosamente (Formato DIAN)")
+            
+            # Mostrar preview
+            with st.expander("👁️ Vista previa del JSON (Compatibilidad DIAN)"):
+                st.json(factura_json)
+            
+    except Exception as e:
+        st.error(f"❌ Error al generar JSON: {str(e)}")
+        st.exception(e)
 
 def marcar_como_pagada(backend_url: str, id_factura: int):
     """Marcar factura como pagada"""
