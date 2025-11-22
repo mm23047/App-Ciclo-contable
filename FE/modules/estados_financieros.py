@@ -100,10 +100,7 @@ def generar_balance_general(
     
     try:
         params = {
-            "fecha_corte": fecha_corte.isoformat(),
-            "formato_detallado": formato_detallado,
-            "incluir_saldo_cero": incluir_saldo_cero,
-            "comparativo": comparativo
+            "guardar": False  # No guardar automáticamente
         }
         
         with st.spinner("Generando Balance General..."):
@@ -111,52 +108,65 @@ def generar_balance_general(
         
         if response.status_code == 200:
             balance_data = response.json()
-            mostrar_balance_general(balance_data, mostrar_codigos, comparativo)
+            mostrar_balance_general(balance_data, mostrar_codigos, comparativo, incluir_saldo_cero)
+        elif response.status_code == 404:
+            st.error("❌ Período no encontrado")
         else:
-            st.error(f"Error al generar balance general: {response.status_code}")
+            error_detail = response.json().get('detail', 'Error desconocido') if response.headers.get('content-type') == 'application/json' else str(response.status_code)
+            st.error(f"❌ Error al generar balance general: {error_detail}")
             
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Error de conexión con el servidor. Verifique que el backend esté en ejecución.")
     except Exception as e:
-        st.error(f"Error al generar balance general: {e}")
+        st.error(f"❌ Error inesperado: {str(e)}")
 
-def mostrar_balance_general(balance_data: Dict[str, Any], mostrar_codigos: bool, comparativo: bool):
+def mostrar_balance_general(balance_data: Dict[str, Any], mostrar_codigos: bool, comparativo: bool, incluir_saldo_cero: bool = False):
     """Mostrar el balance general formateado"""
     
     # Encabezado del reporte
+    empresa = balance_data.get('empresa', {})
+    periodo = balance_data.get('periodo', {})
+    
     st.markdown("### 💰 BALANCE GENERAL")
+    st.markdown(f"**{empresa.get('nombre', 'Empresa')}**")
+    if empresa.get('nit'):
+        st.caption(f"NIT: {empresa.get('nit')}")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Período", balance_data.get('descripcion', 'N/A'))
+        st.metric("Período", f"{periodo.get('tipo', 'N/A')}")
     
     with col2:
-        st.metric("Fecha de Corte", balance_data.get('fecha_corte', 'N/A'))
+        fecha_inicio = periodo.get('fecha_inicio', 'N/A')
+        fecha_fin = periodo.get('fecha_fin', 'N/A')
+        st.metric("Rango", f"{fecha_inicio} / {fecha_fin}")
     
     with col3:
-        fecha_generacion = datetime.now().strftime('%d/%m/%Y %H:%M')
-        st.metric("Fecha de Generación", fecha_generacion)
+        fecha_generacion = balance_data.get('fecha_generacion', datetime.now().strftime('%Y-%m-%d'))
+        st.metric("Fecha Generación", fecha_generacion)
     
     # ACTIVOS
     st.markdown("#### 📈 ACTIVOS")
     activos = balance_data.get('activos', {})
     
     # Activos Corrientes
-    if 'activos_corrientes' in activos:
+    corrientes = activos.get('corrientes', [])
+    if corrientes:
         with st.expander("💧 Activos Corrientes", expanded=True):
-            mostrar_seccion_balance(activos['activos_corrientes'], mostrar_codigos, comparativo)
-            
-            total_corrientes = activos['activos_corrientes'].get('total', 0)
+            mostrar_cuentas_balance(corrientes, mostrar_codigos, incluir_saldo_cero)
+            total_corrientes = sum(c.get('saldo_final', 0) for c in corrientes)
             st.markdown(f"**Total Activos Corrientes: ${total_corrientes:,.2f}**")
     
     # Activos No Corrientes
-    if 'activos_no_corrientes' in activos:
+    no_corrientes = activos.get('no_corrientes', [])
+    if no_corrientes:
         with st.expander("🏢 Activos No Corrientes", expanded=True):
-            mostrar_seccion_balance(activos['activos_no_corrientes'], mostrar_codigos, comparativo)
-            
-            total_no_corrientes = activos['activos_no_corrientes'].get('total', 0)
+            mostrar_cuentas_balance(no_corrientes, mostrar_codigos, incluir_saldo_cero)
+            total_no_corrientes = sum(c.get('saldo_final', 0) for c in no_corrientes)
             st.markdown(f"**Total Activos No Corrientes: ${total_no_corrientes:,.2f}**")
     
-    total_activos = activos.get('total_activos', 0)
+    total_activos = activos.get('total_activos', activos.get('activos', 0))
     st.markdown(f"### 💰 **TOTAL ACTIVOS: ${total_activos:,.2f}**")
     
     # PASIVOS Y PATRIMONIO
@@ -166,34 +176,38 @@ def mostrar_balance_general(balance_data: Dict[str, Any], mostrar_codigos: bool,
     patrimonio = balance_data.get('patrimonio', {})
     
     # Pasivos Corrientes
-    if 'pasivos_corrientes' in pasivos:
+    pasivos_corrientes = pasivos.get('corrientes', [])
+    if pasivos_corrientes:
         with st.expander("⚡ Pasivos Corrientes", expanded=True):
-            mostrar_seccion_balance(pasivos['pasivos_corrientes'], mostrar_codigos, comparativo)
-            
-            total_pasivos_corrientes = pasivos['pasivos_corrientes'].get('total', 0)
+            mostrar_cuentas_balance(pasivos_corrientes, mostrar_codigos, incluir_saldo_cero)
+            total_pasivos_corrientes = sum(c.get('saldo_final', 0) for c in pasivos_corrientes)
             st.markdown(f"**Total Pasivos Corrientes: ${total_pasivos_corrientes:,.2f}**")
     
     # Pasivos No Corrientes
-    if 'pasivos_no_corrientes' in pasivos:
+    pasivos_no_corrientes = pasivos.get('no_corrientes', [])
+    if pasivos_no_corrientes:
         with st.expander("📅 Pasivos No Corrientes", expanded=True):
-            mostrar_seccion_balance(pasivos['pasivos_no_corrientes'], mostrar_codigos, comparativo)
-            
-            total_pasivos_no_corrientes = pasivos['pasivos_no_corrientes'].get('total', 0)
+            mostrar_cuentas_balance(pasivos_no_corrientes, mostrar_codigos, incluir_saldo_cero)
+            total_pasivos_no_corrientes = sum(c.get('saldo_final', 0) for c in pasivos_no_corrientes)
             st.markdown(f"**Total Pasivos No Corrientes: ${total_pasivos_no_corrientes:,.2f}**")
     
-    total_pasivos = pasivos.get('total_pasivos', 0)
+    total_pasivos = pasivos.get('total_pasivos', pasivos.get('pasivos', 0))
     st.markdown(f"**Total Pasivos: ${total_pasivos:,.2f}**")
     
     # Patrimonio
-    if patrimonio:
-        with st.expander("🏦 Patrimonio", expanded=True):
-            mostrar_seccion_balance(patrimonio, mostrar_codigos, comparativo)
+    capital_cuentas = patrimonio.get('capital', [])
+    utilidades_cuentas = patrimonio.get('utilidades', [])
     
-    total_patrimonio = patrimonio.get('total', 0)
+    if capital_cuentas or utilidades_cuentas:
+        with st.expander("🏦 Patrimonio", expanded=True):
+            todas_patrimonio = capital_cuentas + utilidades_cuentas
+            mostrar_cuentas_balance(todas_patrimonio, mostrar_codigos, incluir_saldo_cero)
+    
+    total_patrimonio = patrimonio.get('total_patrimonio', patrimonio.get('patrimonio', 0))
     st.markdown(f"**Total Patrimonio: ${total_patrimonio:,.2f}**")
     
     # Total Pasivos + Patrimonio
-    total_pasivos_patrimonio = total_pasivos + total_patrimonio
+    total_pasivos_patrimonio = balance_data.get('total_pasivo_patrimonio', total_pasivos + total_patrimonio)
     st.markdown(f"### 💼 **TOTAL PASIVOS + PATRIMONIO: ${total_pasivos_patrimonio:,.2f}**")
     
     # Validación de balance
@@ -210,8 +224,44 @@ def mostrar_balance_general(balance_data: Dict[str, Any], mostrar_codigos: bool,
     # Descargar reporte
     generar_descarga_balance(balance_data)
 
+def mostrar_cuentas_balance(cuentas: List[Dict], mostrar_codigos: bool, incluir_saldo_cero: bool):
+    """Mostrar lista de cuentas del balance"""
+    
+    if not cuentas:
+        st.info("No hay cuentas en esta sección")
+        return
+    
+    data = []
+    
+    for cuenta in cuentas:
+        saldo_final = cuenta.get('saldo_final', 0)
+        
+        # Filtrar cuentas con saldo cero si es necesario
+        if not incluir_saldo_cero and abs(saldo_final) < 0.01:
+            continue
+        
+        fila = {}
+        
+        if mostrar_codigos:
+            fila['Cuenta'] = f"{cuenta['codigo']} - {cuenta['nombre']}"
+        else:
+            fila['Cuenta'] = cuenta['nombre']
+        
+        fila['Saldo Inicial'] = f"${cuenta.get('saldo_inicial', 0):,.2f}"
+        fila['Debe'] = f"${cuenta.get('movimientos_debe', 0):,.2f}"
+        fila['Haber'] = f"${cuenta.get('movimientos_haber', 0):,.2f}"
+        fila['Saldo Final'] = f"${saldo_final:,.2f}"
+        
+        data.append(fila)
+    
+    if data:
+        df = pd.DataFrame(data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay movimientos para mostrar")
+
 def mostrar_seccion_balance(seccion: Dict[str, Any], mostrar_codigos: bool, comparativo: bool):
-    """Mostrar una sección del balance general"""
+    """Mostrar una sección del balance general (legacy - para compatibilidad)"""
     
     if 'cuentas' in seccion:
         data = []
@@ -220,15 +270,15 @@ def mostrar_seccion_balance(seccion: Dict[str, Any], mostrar_codigos: bool, comp
             fila = {}
             
             if mostrar_codigos:
-                fila['Cuenta'] = f"{cuenta['codigo_cuenta']} - {cuenta['nombre_cuenta']}"
+                fila['Cuenta'] = f"{cuenta.get('codigo_cuenta', cuenta.get('codigo', ''))} - {cuenta.get('nombre_cuenta', cuenta.get('nombre', ''))}"
             else:
-                fila['Cuenta'] = cuenta['nombre_cuenta']
+                fila['Cuenta'] = cuenta.get('nombre_cuenta', cuenta.get('nombre', ''))
             
-            fila['Saldo'] = f"${cuenta['saldo']:,.2f}"
+            fila['Saldo'] = f"${cuenta.get('saldo', cuenta.get('saldo_final', 0)):,.2f}"
             
             if comparativo and 'saldo_anterior' in cuenta:
                 fila['Saldo Anterior'] = f"${cuenta['saldo_anterior']:,.2f}"
-                variacion = cuenta['saldo'] - cuenta['saldo_anterior']
+                variacion = cuenta.get('saldo', cuenta.get('saldo_final', 0)) - cuenta['saldo_anterior']
                 fila['Variación'] = f"${variacion:,.2f}"
                 if cuenta['saldo_anterior'] != 0:
                     porcentaje = (variacion / abs(cuenta['saldo_anterior'])) * 100
@@ -238,7 +288,7 @@ def mostrar_seccion_balance(seccion: Dict[str, Any], mostrar_codigos: bool, comp
         
         if data:
             df = pd.DataFrame(data)
-            st.dataframe(df, width="stretch", hide_index=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 def mostrar_indicadores_balance(total_activos: float, total_pasivos: float, total_patrimonio: float, balance_data: Dict):
     """Mostrar indicadores financieros básicos"""
@@ -248,8 +298,14 @@ def mostrar_indicadores_balance(total_activos: float, total_pasivos: float, tota
     col1, col2, col3, col4 = st.columns(4)
     
     # Ratio de liquidez (necesita activos y pasivos corrientes)
-    activos_corrientes = balance_data.get('activos', {}).get('activos_corrientes', {}).get('total', 0)
-    pasivos_corrientes = balance_data.get('pasivos', {}).get('pasivos_corrientes', {}).get('total', 0)
+    activos = balance_data.get('activos', {})
+    pasivos = balance_data.get('pasivos', {})
+    
+    activos_corrientes_lista = activos.get('corrientes', [])
+    activos_corrientes = sum(c.get('saldo_final', 0) for c in activos_corrientes_lista)
+    
+    pasivos_corrientes_lista = pasivos.get('corrientes', [])
+    pasivos_corrientes = sum(c.get('saldo_final', 0) for c in pasivos_corrientes_lista)
     
     with col1:
         if pasivos_corrientes > 0:
@@ -292,16 +348,84 @@ def generar_descarga_balance(balance_data: Dict[str, Any]):
         
         # Agregar activos
         activos = balance_data.get('activos', {})
-        if 'activos_corrientes' in activos:
-            for cuenta in activos['activos_corrientes'].get('cuentas', []):
-                resumen_data.append({
-                    'Tipo': 'Activo Corriente',
-                    'Codigo': cuenta['codigo_cuenta'],
-                    'Cuenta': cuenta['nombre_cuenta'],
-                    'Saldo': cuenta['saldo']
-                })
         
-        # Similar para otros tipos...
+        # Activos corrientes
+        for cuenta in activos.get('corrientes', []):
+            resumen_data.append({
+                'Tipo': 'Activo Corriente',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
+        
+        # Activos no corrientes
+        for cuenta in activos.get('no_corrientes', []):
+            resumen_data.append({
+                'Tipo': 'Activo No Corriente',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
+        
+        # Agregar pasivos
+        pasivos = balance_data.get('pasivos', {})
+        
+        # Pasivos corrientes
+        for cuenta in pasivos.get('corrientes', []):
+            resumen_data.append({
+                'Tipo': 'Pasivo Corriente',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
+        
+        # Pasivos no corrientes
+        for cuenta in pasivos.get('no_corrientes', []):
+            resumen_data.append({
+                'Tipo': 'Pasivo No Corriente',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
+        
+        # Agregar patrimonio
+        patrimonio = balance_data.get('patrimonio', {})
+        
+        # Capital
+        for cuenta in patrimonio.get('capital', []):
+            resumen_data.append({
+                'Tipo': 'Capital',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
+        
+        # Utilidades
+        for cuenta in patrimonio.get('utilidades', []):
+            resumen_data.append({
+                'Tipo': 'Utilidades',
+                'Codigo': cuenta.get('codigo', ''),
+                'Cuenta': cuenta.get('nombre', ''),
+                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+                'Debe': cuenta.get('debe', 0),
+                'Haber': cuenta.get('haber', 0),
+                'Saldo_Final': cuenta.get('saldo_final', 0)
+            })
         
         if resumen_data:
             df_resumen = pd.DataFrame(resumen_data)
@@ -394,138 +518,174 @@ def generar_estado_resultados(
     
     try:
         params = {
-            "fecha_desde": fecha_desde.isoformat(),
-            "fecha_hasta": fecha_hasta.isoformat(),
-            "formato_detallado": formato_detallado,
-            "agrupar_por_categoria": agrupar_por_categoria,
-            "incluir_cuentas_cero": incluir_cuentas_cero
+            "guardar": False  # No guardar automáticamente
         }
         
         with st.spinner("Generando Estado de Resultados..."):
-            response = requests.get(f"{backend_url}/api/estados-financieros/estado-resultados/{id_periodo}", params=params)
+            # Endpoint correcto del backend es estado-pyg
+            response = requests.get(f"{backend_url}/api/estados-financieros/estado-pyg/{id_periodo}", params=params)
         
         if response.status_code == 200:
             resultados_data = response.json()
-            mostrar_estado_resultados(resultados_data, mostrar_margenes)
+            mostrar_estado_resultados(resultados_data, mostrar_margenes, incluir_cuentas_cero)
+        elif response.status_code == 404:
+            st.error("❌ Período no encontrado")
         else:
-            st.error(f"Error al generar estado de resultados: {response.status_code}")
+            error_detail = response.json().get('detail', 'Error desconocido') if response.headers.get('content-type') == 'application/json' else str(response.status_code)
+            st.error(f"❌ Error al generar estado de resultados: {error_detail}")
             
+    except requests.exceptions.ConnectionError:
+        st.error("❌ Error de conexión con el servidor. Verifique que el backend esté en ejecución.")
     except Exception as e:
-        st.error(f"Error al generar estado de resultados: {e}")
+        st.error(f"❌ Error inesperado: {str(e)}")
 
-def mostrar_estado_resultados(resultados_data: Dict[str, Any], mostrar_margenes: bool):
+def mostrar_estado_resultados(resultados_data: Dict[str, Any], mostrar_margenes: bool, incluir_cuentas_cero: bool = False):
     """Mostrar el estado de resultados formateado"""
     
     # Encabezado del reporte
-    st.markdown("### 📈 ESTADO DE RESULTADOS")
+    empresa = resultados_data.get('empresa', {})
+    periodo = resultados_data.get('periodo', {})
+    resumen = resultados_data.get('resumen', {})
+    
+    st.markdown("### 📈 ESTADO DE PÉRDIDAS Y GANANCIAS")
+    st.markdown(f"**{empresa.get('nombre', 'Empresa')}**")
+    if empresa.get('nit'):
+        st.caption(f"NIT: {empresa.get('nit')}")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Período", resultados_data.get('descripcion', 'N/A'))
+        st.metric("Período", periodo.get('tipo', 'N/A'))
     
     with col2:
-        fecha_desde = resultados_data.get('fecha_desde', 'N/A')
-        fecha_hasta = resultados_data.get('fecha_hasta', 'N/A')
-        st.metric("Rango de Fechas", f"{fecha_desde} - {fecha_hasta}")
+        fecha_inicio = periodo.get('fecha_inicio', 'N/A')
+        fecha_fin = periodo.get('fecha_fin', 'N/A')
+        st.metric("Rango", f"{fecha_inicio} / {fecha_fin}")
     
     with col3:
-        fecha_generacion = datetime.now().strftime('%d/%m/%Y %H:%M')
-        st.metric("Fecha de Generación", fecha_generacion)
+        fecha_generacion = resultados_data.get('fecha_generacion', datetime.now().strftime('%Y-%m-%d'))
+        st.metric("Fecha Generación", fecha_generacion)
     
     # INGRESOS
     st.markdown("#### 💰 INGRESOS")
     ingresos = resultados_data.get('ingresos', {})
+    total_ingresos = resumen.get('total_ingresos', 0)
     
-    with st.expander("📈 Ingresos Operacionales", expanded=True):
-        if 'ingresos_operacionales' in ingresos:
-            mostrar_seccion_resultados(ingresos['ingresos_operacionales'])
-            total_ing_op = ingresos['ingresos_operacionales'].get('total', 0)
-            st.markdown(f"**Total Ingresos Operacionales: ${total_ing_op:,.2f}**")
+    if ingresos:
+        with st.expander("📈 Ingresos por Categoría", expanded=True):
+            data_ingresos = []
+            for categoria, monto in ingresos.items():
+                if incluir_cuentas_cero or abs(monto) >= 0.01:
+                    data_ingresos.append({
+                        'Categoría': categoria.replace('_', ' ').title(),
+                        'Monto': f"${monto:,.2f}"
+                    })
+            
+            if data_ingresos:
+                df_ingresos = pd.DataFrame(data_ingresos)
+                st.dataframe(df_ingresos, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay ingresos registrados")
     
-    if 'ingresos_no_operacionales' in ingresos:
-        with st.expander("💡 Ingresos No Operacionales", expanded=False):
-            mostrar_seccion_resultados(ingresos['ingresos_no_operacionales'])
-            total_ing_no_op = ingresos['ingresos_no_operacionales'].get('total', 0)
-            st.markdown(f"**Total Ingresos No Operacionales: ${total_ing_no_op:,.2f}**")
-    
-    total_ingresos = ingresos.get('total_ingresos', 0)
     st.markdown(f"### 💵 **TOTAL INGRESOS: ${total_ingresos:,.2f}**")
     
-    # COSTOS Y GASTOS
-    st.markdown("#### 📉 COSTOS Y GASTOS")
+    # EGRESOS (COSTOS Y GASTOS)
+    st.markdown("#### 📉 EGRESOS")
     
-    costos = resultados_data.get('costos', {})
-    gastos = resultados_data.get('gastos', {})
+    egresos = resultados_data.get('egresos', {})
+    total_egresos = resumen.get('total_egresos', 0)
     
-    # Costo de Ventas
-    if costos:
-        with st.expander("🏭 Costo de Ventas", expanded=True):
-            mostrar_seccion_resultados(costos)
-            total_costos = costos.get('total', 0)
-            st.markdown(f"**Total Costo de Ventas: ${total_costos:,.2f}**")
-        
-        # Utilidad Bruta
-        utilidad_bruta = total_ingresos - total_costos
-        st.markdown(f"### 📊 **UTILIDAD BRUTA: ${utilidad_bruta:,.2f}**")
-        
-        if mostrar_margenes and total_ingresos > 0:
-            margen_bruto = (utilidad_bruta / total_ingresos) * 100
-            st.info(f"📊 Margen Bruto: {margen_bruto:.1f}%")
+    if egresos:
+        with st.expander("🏢 Egresos por Categoría", expanded=True):
+            data_egresos = []
+            for categoria, monto in egresos.items():
+                if incluir_cuentas_cero or abs(monto) >= 0.01:
+                    data_egresos.append({
+                        'Categoría': categoria.replace('_', ' ').title(),
+                        'Monto': f"${monto:,.2f}"
+                    })
+            
+            if data_egresos:
+                df_egresos = pd.DataFrame(data_egresos)
+                st.dataframe(df_egresos, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay egresos registrados")
     
-    # Gastos Operacionales
-    if 'gastos_operacionales' in gastos:
-        with st.expander("🏢 Gastos Operacionales", expanded=True):
-            mostrar_seccion_resultados(gastos['gastos_operacionales'])
-            total_gastos_op = gastos['gastos_operacionales'].get('total', 0)
-            st.markdown(f"**Total Gastos Operacionales: ${total_gastos_op:,.2f}**")
+    st.markdown(f"**Total Egresos: ${total_egresos:,.2f}**")
     
-    # Gastos No Operacionales
-    if 'gastos_no_operacionales' in gastos:
-        with st.expander("📋 Gastos No Operacionales", expanded=False):
-            mostrar_seccion_resultados(gastos['gastos_no_operacionales'])
-            total_gastos_no_op = gastos['gastos_no_operacionales'].get('total', 0)
-            st.markdown(f"**Total Gastos No Operacionales: ${total_gastos_no_op:,.2f}**")
+    # Utilidad Bruta
+    utilidad_bruta = resumen.get('utilidad_bruta', total_ingresos - total_egresos)
+    st.markdown(f"### 📊 **UTILIDAD BRUTA: ${utilidad_bruta:,.2f}**")
     
-    total_gastos = gastos.get('total_gastos', 0)
-    st.markdown(f"**Total Gastos: ${total_gastos:,.2f}**")
+    if mostrar_margenes and total_ingresos > 0:
+        margen_bruto = (utilidad_bruta / total_ingresos) * 100
+        st.info(f"📊 Margen Bruto: {margen_bruto:.1f}%")
     
     # UTILIDAD NETA
-    utilidad_neta = resultados_data.get('utilidad_neta', 0)
+    utilidad_neta = resumen.get('utilidad_neta', 0)
     
+    st.markdown("---")
     if utilidad_neta >= 0:
         st.success(f"### 🎉 **UTILIDAD NETA: ${utilidad_neta:,.2f}**")
     else:
         st.error(f"### 😞 **PÉRDIDA NETA: ${abs(utilidad_neta):,.2f}**")
     
     # Márgenes de rentabilidad
-    if mostrar_margenes:
-        mostrar_margenes_rentabilidad(total_ingresos, utilidad_neta, resultados_data)
+    if mostrar_margenes and total_ingresos > 0:
+        st.markdown("### 📊 Márgenes de Rentabilidad")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            margen_neto = (utilidad_neta / total_ingresos) * 100
+            st.metric("Margen Neto", f"{margen_neto:.2f}%")
+        
+        with col2:
+            margen_bruto_pct = (utilidad_bruta / total_ingresos) * 100
+            st.metric("Margen Bruto", f"{margen_bruto_pct:.2f}%")
+        
+        with col3:
+            if total_egresos > 0:
+                ratio_gastos = (total_egresos / total_ingresos) * 100
+                st.metric("% Gastos/Ingresos", f"{ratio_gastos:.2f}%")
     
     # Gráfico de composición
-    mostrar_grafico_resultados(resultados_data)
+    mostrar_grafico_resultados(total_ingresos, total_egresos, utilidad_neta)
     
     # Descargar reporte
     generar_descarga_resultados(resultados_data)
 
 def mostrar_seccion_resultados(seccion: Dict[str, Any]):
-    """Mostrar una sección del estado de resultados"""
+    """Mostrar una sección del estado de resultados (legacy)"""
     
     if 'cuentas' in seccion:
         data = []
         
         for cuenta in seccion['cuentas']:
             data.append({
-                'Cuenta': f"{cuenta['codigo_cuenta']} - {cuenta['nombre_cuenta']}",
-                'Saldo': f"${cuenta['saldo']:,.2f}"
+                'Cuenta': f"{cuenta.get('codigo_cuenta', cuenta.get('codigo', ''))} - {cuenta.get('nombre_cuenta', cuenta.get('nombre', ''))}",
+                'Saldo': f"${cuenta.get('saldo', cuenta.get('saldo_final', 0)):,.2f}"
             })
         
         if data:
             df = pd.DataFrame(data)
-            st.dataframe(df, width="stretch", hide_index=True)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+    elif isinstance(seccion, dict):
+        # Si la sección es un diccionario de categorías con montos
+        data = []
+        for categoria, monto in seccion.items():
+            if categoria not in ['total', 'total_ingresos', 'total_egresos', 'total_gastos']:
+                data.append({
+                    'Categoría': categoria.replace('_', ' ').title(),
+                    'Monto': f"${monto:,.2f}"
+                })
+        
+        if data:
+            df = pd.DataFrame(data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
 
 def mostrar_margenes_rentabilidad(total_ingresos: float, utilidad_neta: float, resultados_data: Dict):
-    """Mostrar márgenes de rentabilidad"""
+    """Mostrar márgenes de rentabilidad (función legacy - ya no se usa directamente)"""
     
     st.markdown("### 📊 Márgenes de Rentabilidad")
     
@@ -540,59 +700,66 @@ def mostrar_margenes_rentabilidad(total_ingresos: float, utilidad_neta: float, r
     
     with col2:
         # Margen operacional (si hay datos de utilidad operacional)
-        gastos_op = resultados_data.get('gastos', {}).get('gastos_operacionales', {}).get('total', 0)
-        utilidad_operacional = total_ingresos - gastos_op
+        egresos = resultados_data.get('egresos', {})
+        total_egresos = sum(egresos.values()) if isinstance(egresos, dict) else 0
+        utilidad_bruta = total_ingresos - total_egresos
         
         if total_ingresos > 0:
-            margen_operacional = (utilidad_operacional / total_ingresos) * 100
-            st.metric("Margen Operacional", f"{margen_operacional:.1f}%")
+            margen_bruto = (utilidad_bruta / total_ingresos) * 100
+            st.metric("Margen Bruto", f"{margen_bruto:.1f}%")
         else:
-            st.metric("Margen Operacional", "N/A")
+            st.metric("Margen Bruto", "N/A")
     
     with col3:
-        # ROA - necesitaríamos datos de activos
         st.metric("ROA", "Requiere Balance")
     
     with col4:
-        # ROE - necesitaríamos datos de patrimonio
         st.metric("ROE", "Requiere Balance")
 
-def mostrar_grafico_resultados(resultados_data: Dict[str, Any]):
+def mostrar_grafico_resultados(total_ingresos: float, total_egresos: float, utilidad_neta: float):
     """Mostrar gráfico de composición de resultados"""
     
     st.markdown("### 📊 Análisis Gráfico")
     
-    # Preparar datos para el gráfico
-    ingresos_total = resultados_data.get('ingresos', {}).get('total_ingresos', 0)
-    costos_total = resultados_data.get('costos', {}).get('total', 0)
-    gastos_total = resultados_data.get('gastos', {}).get('total_gastos', 0)
-    utilidad_neta = resultados_data.get('utilidad_neta', 0)
-    
     # Gráfico de barras comparativo
-    conceptos = ['Ingresos', 'Costos', 'Gastos', 'Utilidad Neta']
-    valores = [ingresos_total, -costos_total, -gastos_total, utilidad_neta]
-    colores = ['green', 'red', 'orange', 'blue' if utilidad_neta >= 0 else 'red']
+    conceptos = ['Ingresos', 'Egresos', 'Utilidad Neta']
+    valores = [total_ingresos, total_egresos, utilidad_neta]
+    colores = ['#2ecc71', '#e74c3c', '#3498db' if utilidad_neta >= 0 else '#e74c3c']
     
     fig = go.Figure()
     
-    for i, (concepto, valor, color) in enumerate(zip(conceptos, valores, colores)):
-        fig.add_trace(go.Bar(
-            x=[concepto],
-            y=[valor],
-            name=concepto,
-            marker_color=color,
-            text=[f'${abs(valor):,.0f}'],
-            textposition='outside'
-        ))
+    fig.add_trace(go.Bar(
+        x=conceptos,
+        y=valores,
+        marker_color=colores,
+        text=[f'${abs(v):,.0f}' for v in valores],
+        textposition='outside',
+        textfont=dict(size=14)
+    ))
     
     fig.update_layout(
         title="Composición del Estado de Resultados",
         yaxis_title="Valor ($)",
+        xaxis_title="Concepto",
         showlegend=False,
-        height=400
+        height=400,
+        yaxis=dict(tickformat="$,.0f")
     )
     
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Gráfico de pastel para distribución de egresos si hay datos
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if total_ingresos > 0 and total_egresos > 0:
+            fig_composicion = go.Figure(data=[go.Pie(
+                labels=['Ingresos', 'Egresos', 'Utilidad Neta'],
+                values=[total_ingresos, total_egresos, abs(utilidad_neta)],
+                hole=.3
+            )])
+            fig_composicion.update_layout(title="Composición General", height=300)
+            st.plotly_chart(fig_composicion, use_container_width=True)
 
 def generar_descarga_resultados(resultados_data: Dict[str, Any]):
     """Generar archivo para descarga del estado de resultados"""
@@ -607,16 +774,48 @@ def generar_descarga_resultados(resultados_data: Dict[str, Any]):
         
         # Agregar ingresos
         ingresos = resultados_data.get('ingresos', {})
-        if 'ingresos_operacionales' in ingresos:
-            for cuenta in ingresos['ingresos_operacionales'].get('cuentas', []):
+        for categoria, monto in ingresos.items():
+            if categoria not in ['total', 'total_ingresos']:
                 resumen_data.append({
                     'Tipo': 'Ingreso',
-                    'Codigo': cuenta['codigo_cuenta'],
-                    'Cuenta': cuenta['nombre_cuenta'],
-                    'Saldo': cuenta['saldo']
+                    'Categoría': categoria.replace('_', ' ').title(),
+                    'Monto': monto
                 })
         
-        # Agregar costos y gastos...
+        # Agregar egresos
+        egresos = resultados_data.get('egresos', {})
+        for categoria, monto in egresos.items():
+            if categoria not in ['total', 'total_egresos', 'total_gastos']:
+                resumen_data.append({
+                    'Tipo': 'Egreso',
+                    'Categoría': categoria.replace('_', ' ').title(),
+                    'Monto': monto
+                })
+        
+        # Agregar resumen
+        resumen = resultados_data.get('resumen', {})
+        resumen_data.extend([
+            {
+                'Tipo': 'Resumen',
+                'Categoría': 'Total Ingresos',
+                'Monto': resumen.get('total_ingresos', 0)
+            },
+            {
+                'Tipo': 'Resumen',
+                'Categoría': 'Total Egresos',
+                'Monto': resumen.get('total_egresos', 0)
+            },
+            {
+                'Tipo': 'Resumen',
+                'Categoría': 'Utilidad Bruta',
+                'Monto': resumen.get('utilidad_bruta', 0)
+            },
+            {
+                'Tipo': 'Resumen',
+                'Categoría': 'Utilidad Neta',
+                'Monto': resumen.get('utilidad_neta', 0)
+            }
+        ])
         
         if resumen_data:
             df_resumen = pd.DataFrame(resumen_data)

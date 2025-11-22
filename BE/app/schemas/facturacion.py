@@ -12,16 +12,16 @@ class ClienteBase(BaseModel):
     nombre: str = Field(..., min_length=1, max_length=200, description="Nombre del cliente")
     apellidos: Optional[str] = Field(None, max_length=200, description="Apellidos del cliente")
     nombre_comercial: Optional[str] = Field(None, max_length=200, description="Nombre comercial")
-    tipo_cliente: str = Field(..., pattern="^(PERSONA_NATURAL|PERSONA_JURIDICA)$", description="Tipo de cliente")
+    tipo_cliente: str = Field(..., description="Tipo de cliente")
     nit: Optional[str] = Field(None, max_length=20, description="NIT del cliente")
     dui: Optional[str] = Field(None, max_length=10, description="DUI del cliente")
     telefono_principal: Optional[str] = Field(None, max_length=20, description="Teléfono principal")
     email: Optional[str] = Field(None, max_length=100, description="Email del cliente")
     direccion: Optional[str] = Field(None, description="Dirección del cliente")
-    categoria_cliente: Optional[str] = Field(None, pattern="^(MAYORISTA|MINORISTA|DISTRIBUIDOR|CORPORATIVO|GOBIERNO)$")
+    categoria_cliente: Optional[str] = Field(None, description="Categoría del cliente")
     limite_credito: Decimal = Field(default=Decimal("0.00"), ge=0, description="Límite de crédito")
     dias_credito: int = Field(default=0, ge=0, description="Días de crédito")
-    estado_cliente: str = Field(default="ACTIVO", pattern="^(ACTIVO|INACTIVO|BLOQUEADO)$")
+    estado_cliente: str = Field(default="ACTIVO", description="Estado del cliente")
     usuario_creacion: str = Field(..., min_length=1, max_length=50, description="Usuario que crea el cliente")
 
 class ClienteCreate(ClienteBase):
@@ -35,7 +35,7 @@ class ClienteUpdate(BaseModel):
     direccion: Optional[str] = None
     limite_credito: Optional[Decimal] = Field(None, ge=0)
     dias_credito: Optional[int] = Field(None, ge=0)
-    estado_cliente: Optional[str] = Field(None, pattern="^(ACTIVO|INACTIVO|BLOQUEADO)$")
+    estado_cliente: Optional[str] = None
 
 class ClienteRead(ClienteBase):
     id_cliente: int
