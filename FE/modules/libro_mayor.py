@@ -178,9 +178,9 @@ def mostrar_mayor_cuenta_especifica(datos_cuenta: Dict[str, Any]):
         # Formatear columnas
         df_display = df_movimientos.copy()
         df_display['fecha_movimiento'] = pd.to_datetime(df_display['fecha_movimiento']).dt.strftime('%d/%m/%Y')
-        df_display['debe'] = df_display['debe'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
-        df_display['haber'] = df_display['haber'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
-        df_display['saldo_acumulado'] = df_display['saldo_acumulado'].apply(lambda x: f"${x:,.2f}")
+        df_display['debe'] = df_display['debe'].apply(lambda x: f"${float(x):,.2f}" if float(x) > 0 else "-")
+        df_display['haber'] = df_display['haber'].apply(lambda x: f"${float(x):,.2f}" if float(x) > 0 else "-")
+        df_display['saldo_acumulado'] = df_display['saldo_acumulado'].apply(lambda x: f"${float(x):,.2f}")
         
         # Renombrar columnas
         df_display.columns = ['Fecha', 'Descripción', 'Referencia', 'Debe', 'Haber', 'Saldo Acumulado']
@@ -217,11 +217,11 @@ def mostrar_mayor_cuenta_especifica(datos_cuenta: Dict[str, Any]):
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            total_debe = sum(m['debe'] for m in movimientos)
+            total_debe = float(sum(float(m['debe']) for m in movimientos))
             st.metric("Total Debe", f"${total_debe:,.2f}")
         
         with col2:
-            total_haber = sum(m['haber'] for m in movimientos)
+            total_haber = float(sum(float(m['haber']) for m in movimientos))
             st.metric("Total Haber", f"${total_haber:,.2f}")
         
         with col3:
@@ -247,17 +247,17 @@ def mostrar_mayor_multiple_cuentas(datos_cuentas: List[Dict[str, Any]]):
     resumen_data = []
     for cuenta in datos_cuentas:
         movimientos = cuenta.get('movimientos', [])
-        total_debe = sum(m['debe'] for m in movimientos)
-        total_haber = sum(m['haber'] for m in movimientos)
+        total_debe = float(sum(float(m['debe']) for m in movimientos))
+        total_haber = float(sum(float(m['haber']) for m in movimientos))
         
         resumen_data.append({
             'Código': cuenta.get('codigo_cuenta', 'N/A'),
             'Nombre': cuenta.get('nombre_cuenta', 'N/A'),
             'Tipo': cuenta.get('tipo_cuenta', 'N/A'),
-            'Saldo Inicial': cuenta.get('saldo_inicial', 0),
+            'Saldo Inicial': float(cuenta.get('saldo_inicial', 0)),
             'Total Debe': total_debe,
             'Total Haber': total_haber,
-            'Saldo Final': cuenta.get('saldo_final', 0),
+            'Saldo Final': float(cuenta.get('saldo_final', 0)),
             'Movimientos': len(movimientos)
         })
     
@@ -265,7 +265,7 @@ def mostrar_mayor_multiple_cuentas(datos_cuentas: List[Dict[str, Any]]):
     
     # Formatear columnas monetarias
     for col in ['Saldo Inicial', 'Total Debe', 'Total Haber', 'Saldo Final']:
-        df_resumen[f'{col} (Formato)'] = df_resumen[col].apply(lambda x: f"${x:,.2f}")
+        df_resumen[f'{col} (Formato)'] = df_resumen[col].apply(lambda x: f"${float(x):,.2f}")
     
     # Mostrar tabla
     columnas_mostrar = ['Código', 'Nombre', 'Tipo', 'Saldo Inicial (Formato)', 

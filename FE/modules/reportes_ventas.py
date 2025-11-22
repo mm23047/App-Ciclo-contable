@@ -221,10 +221,10 @@ def generar_dashboard_simulado(backend_url: str, fecha_inicio: date, fecha_fin: 
         if response_facturas.status_code == 200:
             facturas = response_facturas.json()
             
-            # Calcular métricas básicas
+            # Calcular métricas básicas y convertir a float
             total_facturas = len(facturas)
-            ventas_totales = sum(f.get('total', 0) for f in facturas)
-            ticket_promedio = ventas_totales / total_facturas if total_facturas > 0 else 0
+            ventas_totales = float(sum(float(f.get('total', 0)) for f in facturas))
+            ticket_promedio = ventas_totales / total_facturas if total_facturas > 0 else 0.0
             
             # Clientes únicos
             clientes_unicos = len(set(f.get('cliente_id') for f in facturas if f.get('cliente_id')))

@@ -20,8 +20,8 @@ def crear_periodo(periodo: PeriodoCreate, db: Session = Depends(get_db)):
     return create_periodo(db, periodo)
 
 @router.get("/", response_model=List[PeriodoRead])
-def listar_periodos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Obtener todos los períodos contables con paginación"""
+def listar_periodos(skip: int = 0, limit: int = 500, db: Session = Depends(get_db)):
+    """Obtener todos los períodos contables con paginación, ordenados por fecha más reciente"""
     return get_periodos(db, skip=skip, limit=limit)
 
 @router.get("/activos", response_model=List[PeriodoRead])

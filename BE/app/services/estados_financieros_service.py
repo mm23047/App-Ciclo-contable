@@ -104,7 +104,7 @@ def generar_balance_general(db: Session, periodo_id: int) -> Dict[str, Any]:
         # Calcular saldo final según naturaleza de la cuenta
         if saldo.tipo_cuenta in ['Activo']:
             saldo_final = saldo_inicial + (saldo.total_debe or 0) - (saldo.total_haber or 0)
-        else:  # Pasivo, Capital
+        else:  # Pasivo, Patrimonio
             saldo_final = saldo_inicial + (saldo.total_haber or 0) - (saldo.total_debe or 0)
         
         cuenta_data = {
@@ -134,7 +134,7 @@ def generar_balance_general(db: Session, periodo_id: int) -> Dict[str, Any]:
                 balance_general["pasivos"]["no_corrientes"].append(cuenta_data)
             balance_general["pasivos"]["total_pasivos"] += Decimal(str(saldo_final))
         
-        elif saldo.tipo_cuenta == 'Capital':
+        elif saldo.tipo_cuenta in ['Patrimonio', 'Capital']:
             if 'utilidad' in saldo.nombre_cuenta.lower() or 'resultado' in saldo.nombre_cuenta.lower():
                 balance_general["patrimonio"]["utilidades"].append(cuenta_data)
             else:
@@ -148,15 +148,17 @@ def generar_balance_general(db: Session, periodo_id: int) -> Dict[str, Any]:
     )
     
     # Convertir Decimals a float para JSON
-    for key in ["total_activos", "total_pasivos", "total_patrimonio", "total_pasivo_patrimonio"]:
-        if "activos" in key:
-            balance_general["activos"][key.replace("total_", "")] = float(balance_general["activos"][key])
-        elif "pasivos" in key:
-            balance_general["pasivos"][key.replace("total_", "")] = float(balance_general["pasivos"][key])
-        elif "patrimonio" in key:
-            balance_general["patrimonio"][key.replace("total_", "")] = float(balance_general["patrimonio"][key])
-        else:
-            balance_general[key] = float(balance_general[key])
+    # Procesar totales de activos
+    balance_general["activos"]["total"] = float(balance_general["activos"]["total_activos"])
+    
+    # Procesar totales de pasivos
+    balance_general["pasivos"]["total"] = float(balance_general["pasivos"]["total_pasivos"])
+    
+    # Procesar totales de patrimonio
+    balance_general["patrimonio"]["total"] = float(balance_general["patrimonio"]["total_patrimonio"])
+    
+    # Procesar total general pasivo + patrimonio
+    balance_general["total_pasivo_patrimonio"] = float(balance_general["total_pasivo_patrimonio"])
     
     return balance_general
 

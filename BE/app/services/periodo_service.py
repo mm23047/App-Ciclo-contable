@@ -34,9 +34,9 @@ def get_periodo(db: Session, periodo_id: int) -> Optional[PeriodoContable]:
         )
     return periodo
 
-def get_periodos(db: Session, skip: int = 0, limit: int = 100) -> List[PeriodoContable]:
-    """Obtener todos los períodos con paginación"""
-    return db.query(PeriodoContable).offset(skip).limit(limit).all()
+def get_periodos(db: Session, skip: int = 0, limit: int = 500) -> List[PeriodoContable]:
+    """Obtener todos los períodos con paginación, ordenados por fecha descendente"""
+    return db.query(PeriodoContable).order_by(PeriodoContable.fecha_inicio.desc()).offset(skip).limit(limit).all()
 
 def get_periodos_activos(db: Session) -> List[PeriodoContable]:
     """Obtener solo períodos con estado ABIERTO"""

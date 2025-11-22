@@ -219,11 +219,15 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         # Crear DataFrame
         df_cuentas = pd.DataFrame(cuentas)
         
+        # Asegurar que los valores sean numéricos
+        for col in ['saldo_inicial', 'total_debe', 'total_haber', 'saldo_final']:
+            df_cuentas[col] = df_cuentas[col].apply(lambda x: float(x) if x else 0.0)
+        
         # Calcular totales
-        total_debe = df_cuentas['total_debe'].sum()
-        total_haber = df_cuentas['total_haber'].sum()
-        total_saldo_deudor = df_cuentas[df_cuentas['saldo_final'] > 0]['saldo_final'].sum()
-        total_saldo_acreedor = abs(df_cuentas[df_cuentas['saldo_final'] < 0]['saldo_final'].sum())
+        total_debe = float(df_cuentas['total_debe'].sum())
+        total_haber = float(df_cuentas['total_haber'].sum())
+        total_saldo_deudor = float(df_cuentas[df_cuentas['saldo_final'] > 0]['saldo_final'].sum())
+        total_saldo_acreedor = float(abs(df_cuentas[df_cuentas['saldo_final'] < 0]['saldo_final'].sum()))
         
         # Mostrar totales de control
         st.markdown("### 📊 Totales de Control")
