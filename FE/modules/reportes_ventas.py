@@ -212,18 +212,27 @@ def generar_dashboard_simulado(backend_url: str, fecha_inicio: date, fecha_fin: 
     try:
         # Obtener facturas del período
         params = {
-            "fecha_inicio": fecha_inicio.isoformat(),
-            "fecha_fin": fecha_fin.isoformat()
+            "fecha_desde": fecha_inicio.isoformat(),
+            "fecha_hasta": fecha_fin.isoformat()
         }
         
-        response_facturas = requests.get(f"{backend_url}/api/facturas", params=params)
+        response_facturas = requests.get(f"{backend_url}/api/facturacion/facturas", params=params)
         
         if response_facturas.status_code == 200:
             facturas = response_facturas.json()
             
             # Calcular métricas básicas y convertir a float
             total_facturas = len(facturas)
-            ventas_totales = float(sum(float(f.get('total', 0)) for f in facturas))
+            # Convertir cada total a float de manera segura
+            totales = []
+            for f in facturas:
+                total_valor = f.get('total', 0)
+                if isinstance(total_valor, str):
+                    # Limpiar el string y convertir
+                    total_valor = total_valor.replace(',', '').strip()
+                totales.append(float(total_valor) if total_valor else 0.0)
+            
+            ventas_totales = sum(totales)
             ticket_promedio = ventas_totales / total_facturas if total_facturas > 0 else 0.0
             
             # Clientes únicos
@@ -261,16 +270,20 @@ def generar_graficos_basicos(facturas: List[Dict]):
     if df_facturas.empty:
         return
     
+    # Convertir columna total a float para evitar concatenación de strings
+    if 'total' in df_facturas.columns:
+        df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+    
     # Gráfico de ventas por día
-    if 'fecha_factura' in df_facturas.columns:
+    if 'fecha_emision' in df_facturas.columns:
         st.markdown("### 📈 Ventas Diarias")
         
-        df_facturas['fecha_factura'] = pd.to_datetime(df_facturas['fecha_factura'])
-        ventas_diarias = df_facturas.groupby(df_facturas['fecha_factura'].dt.date)['total'].sum().reset_index()
+        df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision'])
+        ventas_diarias = df_facturas.groupby(df_facturas['fecha_emision'].dt.date)['total'].sum().reset_index()
         
         fig_diarias = px.bar(
             ventas_diarias,
-            x='fecha_factura',
+            x='fecha_emision',
             y='total',
             title='Ventas por Día'
         )
@@ -351,18 +364,22 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
     
     try:
         params = {
-            "fecha_inicio": fecha_desde.isoformat(),
-            "fecha_fin": fecha_hasta.isoformat()
+            "fecha_desde": fecha_desde.isoformat(),
+            "fecha_hasta": fecha_hasta.isoformat()
         }
         
         with st.spinner("Generando reporte..."):
-            response = requests.get(f"{backend_url}/api/facturas", params=params)
+            response = requests.get(f"{backend_url}/api/facturacion/facturas", params=params)
         
         if response.status_code == 200:
             facturas = response.json()
             
             if facturas:
                 df_facturas = pd.DataFrame(facturas)
+                
+                # Convertir columna total a float para evitar concatenación de strings
+                if 'total' in df_facturas.columns:
+                    df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
                 
                 # Resumen del período
                 col1, col2, col3, col4 = st.columns(4)
@@ -371,11 +388,11 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                     st.metric("Facturas", len(facturas))
                 
                 with col2:
-                    ventas_total = df_facturas['total'].sum()
+                    ventas_total = float(df_facturas['total'].sum())
                     st.metric("Ventas Totales", f"${ventas_total:,.2f}")
                 
                 with col3:
-                    ticket_promedio = df_facturas['total'].mean()
+                    ticket_promedio = float(df_facturas['total'].mean())
                     st.metric("Ticket Promedio", f"${ticket_promedio:,.2f}")
                 
                 with col4:
@@ -387,15 +404,15 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                 
                 # Preparar datos para mostrar
                 df_display = df_facturas.copy()
-                if 'fecha_factura' in df_display.columns:
-                    df_display['fecha_factura'] = pd.to_datetime(df_display['fecha_factura']).dt.strftime('%Y-%m-%d')
+                if 'fecha_emision' in df_display.columns:
+                    df_display['fecha_emision'] = pd.to_datetime(df_display['fecha_emision']).dt.strftime('%Y-%m-%d')
                 
                 # Formatear total
                 if 'total' in df_display.columns:
                     df_display['total_fmt'] = df_display['total'].apply(lambda x: f"${float(x):,.2f}")
                 
                 # Seleccionar columnas relevantes
-                columnas_mostrar = ['numero_factura', 'fecha_factura', 'cliente_nombre', 'total_fmt', 'estado']
+                columnas_mostrar = ['numero_factura', 'fecha_emision', 'id_cliente', 'total_fmt', 'estado_factura']
                 columnas_disponibles = [col for col in columnas_mostrar if col in df_display.columns or col == 'total_fmt']
                 
                 if columnas_disponibles:
@@ -404,10 +421,10 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                     # Renombrar columnas
                     nombres_cols = {
                         'numero_factura': 'Número',
-                        'fecha_factura': 'Fecha',
-                        'cliente_nombre': 'Cliente',
+                        'fecha_emision': 'Fecha',
+                        'id_cliente': 'Cliente',
                         'total_fmt': 'Total',
-                        'estado': 'Estado'
+                        'estado_factura': 'Estado'
                     }
                     
                     df_tabla.columns = [nombres_cols.get(col, col) for col in df_tabla.columns]
@@ -418,12 +435,12 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                 if len(facturas) > 1:
                     st.markdown("#### 📈 Evolución de Ventas")
                     
-                    df_facturas['fecha_factura'] = pd.to_datetime(df_facturas['fecha_factura'])
-                    ventas_diarias = df_facturas.groupby(df_facturas['fecha_factura'].dt.date)['total'].sum().reset_index()
+                    df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision'])
+                    ventas_diarias = df_facturas.groupby(df_facturas['fecha_emision'].dt.date)['total'].sum().reset_index()
                     
                     fig_evolucion = px.line(
                         ventas_diarias,
-                        x='fecha_factura',
+                        x='fecha_emision',
                         y='total',
                         title='Evolución de Ventas en el Período',
                         markers=True
@@ -445,12 +462,12 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
     try:
         # Obtener facturas del período
         params = {
-            "fecha_inicio": fecha_desde.isoformat(),
-            "fecha_fin": fecha_hasta.isoformat()
+            "fecha_desde": fecha_desde.isoformat(),
+            "fecha_hasta": fecha_hasta.isoformat()
         }
         
         with st.spinner("Generando reporte por clientes..."):
-            response_facturas = requests.get(f"{backend_url}/api/facturas", params=params)
+            response_facturas = requests.get(f"{backend_url}/api/facturacion/facturas", params=params)
             response_clientes = requests.get(f"{backend_url}/api/clientes")
         
         if response_facturas.status_code == 200 and response_clientes.status_code == 200:
@@ -464,10 +481,14 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                 # Analizar ventas por cliente
                 df_facturas = pd.DataFrame(facturas)
                 
+                # Convertir columna total a float para evitar concatenación de strings
+                if 'total' in df_facturas.columns:
+                    df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+                
                 if 'cliente_id' in df_facturas.columns:
                     ventas_cliente = df_facturas.groupby('cliente_id').agg({
                         'total': ['sum', 'count', 'mean'],
-                        'fecha_factura': ['min', 'max']
+                        'fecha_emision': ['min', 'max']
                     }).round(2)
                     
                     # Aplanar columnas
@@ -491,10 +512,10 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                     with col2:
                         mejor_cliente = ventas_cliente.iloc[0] if len(ventas_cliente) > 0 else None
                         if mejor_cliente is not None:
-                            st.metric("Mejor Cliente", f"${mejor_cliente['Total_Ventas']:,.2f}")
+                            st.metric("Mejor Cliente", f"${float(mejor_cliente['Total_Ventas']):,.2f}")
                     
                     with col3:
-                        ticket_promedio_general = ventas_cliente['Ticket_Promedio'].mean()
+                        ticket_promedio_general = float(ventas_cliente['Ticket_Promedio'].mean())
                         st.metric("Ticket Prom. General", f"${ticket_promedio_general:,.2f}")
                     
                     # Tabla de ventas por cliente
@@ -612,12 +633,12 @@ def generar_comparativo_periodos(backend_url: str, p1_inicio: date, p1_fin: date
     
     try:
         # Obtener datos de ambos períodos
-        params1 = {"fecha_inicio": p1_inicio.isoformat(), "fecha_fin": p1_fin.isoformat()}
-        params2 = {"fecha_inicio": p2_inicio.isoformat(), "fecha_fin": p2_fin.isoformat()}
+        params1 = {"fecha_desde": p1_inicio.isoformat(), "fecha_hasta": p1_fin.isoformat()}
+        params2 = {"fecha_desde": p2_inicio.isoformat(), "fecha_hasta": p2_fin.isoformat()}
         
         with st.spinner("Generando análisis comparativo..."):
-            response1 = requests.get(f"{backend_url}/api/facturas", params=params1)
-            response2 = requests.get(f"{backend_url}/api/facturas", params=params2)
+            response1 = requests.get(f"{backend_url}/api/facturacion/facturas", params=params1)
+            response2 = requests.get(f"{backend_url}/api/facturacion/facturas", params=params2)
         
         if response1.status_code == 200 and response2.status_code == 200:
             facturas1 = response1.json()
@@ -648,10 +669,14 @@ def calcular_metricas_periodo(facturas: List[Dict]) -> Dict[str, Any]:
     
     df = pd.DataFrame(facturas)
     
+    # Convertir columna total a float para evitar concatenación de strings
+    if 'total' in df.columns:
+        df['total'] = df['total'].astype(str).str.replace(',', '').astype(float)
+    
     return {
         'total_facturas': len(facturas),
-        'ventas_totales': df['total'].sum(),
-        'ticket_promedio': df['total'].mean(),
+        'ventas_totales': float(df['total'].sum()),
+        'ticket_promedio': float(df['total'].mean()),
         'clientes_unicos': df['cliente_id'].nunique() if 'cliente_id' in df.columns else 0
     }
 
@@ -674,8 +699,8 @@ def mostrar_comparativo_metricas(metricas1: Dict, metricas2: Dict, p1_inicio: da
         
         # Calcular variaciones
         var_facturas = metricas2['total_facturas'] - metricas1['total_facturas']
-        var_ventas = metricas2['ventas_totales'] - metricas1['ventas_totales']
-        var_ticket = metricas2['ticket_promedio'] - metricas1['ticket_promedio']
+        var_ventas = float(metricas2['ventas_totales']) - float(metricas1['ventas_totales'])
+        var_ticket = float(metricas2['ticket_promedio']) - float(metricas1['ticket_promedio'])
         var_clientes = metricas2['clientes_unicos'] - metricas1['clientes_unicos']
         
         st.metric("Facturas", metricas2['total_facturas'], delta=var_facturas)
@@ -820,11 +845,11 @@ def generar_exportacion(backend_url: str, tipo_reporte: str, formato: str, fecha
         with st.spinner(f"Generando reporte en formato {formato}..."):
             # Obtener datos
             params = {
-                "fecha_inicio": fecha_desde.isoformat(),
-                "fecha_fin": fecha_hasta.isoformat()
+                "fecha_desde": fecha_desde.isoformat(),
+                "fecha_hasta": fecha_hasta.isoformat()
             }
             
-            response = requests.get(f"{backend_url}/api/facturas", params=params)
+            response = requests.get(f"{backend_url}/api/facturacion/facturas", params=params)
             
             if response.status_code == 200:
                 facturas = response.json()
@@ -855,6 +880,11 @@ def generar_excel(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fe
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         # Hoja principal con datos
         df_facturas = pd.DataFrame(facturas)
+        
+        # Convertir columna total a float para evitar concatenación de strings
+        if 'total' in df_facturas.columns:
+            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+        
         df_facturas.to_excel(writer, sheet_name='Ventas Detalladas', index=False)
         
         # Hoja resumen
