@@ -546,12 +546,23 @@ def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
         
         with col1:
             nombre = st.text_input("Nombre/Razón Social:", value=cliente.get('nombre', ''))
-            email = st.text_input("Email:", value=cliente.get('email', ''))
-            telefono = st.text_input("Teléfono:", value=cliente.get('telefono', ''))
+            email = st.text_input("Email:", value=cliente.get('email', '') or '')
+            telefono = st.text_input("Teléfono:", value=cliente.get('telefono', '') or '')
+            
+            # Manejar categoría de forma segura
+            categorias_validas = ["VIP", "Corporativo", "PYME", "Nuevo", "Mayorista", "Minorista"]
+            categoria_actual = cliente.get('categoria_cliente')
+            
+            # Si la categoría es None o no está en la lista, usar "Nuevo" como default
+            if categoria_actual not in categorias_validas:
+                categoria_index = categorias_validas.index("Nuevo")
+            else:
+                categoria_index = categorias_validas.index(categoria_actual)
+            
             categoria = st.selectbox(
                 "Categoría:",
-                ["VIP", "Corporativo", "PYME", "Nuevo", "Mayorista", "Minorista"],
-                index=["VIP", "Corporativo", "PYME", "Nuevo", "Mayorista", "Minorista"].index(cliente.get('categoria_cliente', 'Nuevo'))
+                categorias_validas,
+                index=categoria_index
             )
         
         with col2:
