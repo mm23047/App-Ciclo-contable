@@ -392,7 +392,7 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                 
                 # Formatear total
                 if 'total' in df_display.columns:
-                    df_display['total_fmt'] = df_display['total'].apply(lambda x: f"${x:,.2f}")
+                    df_display['total_fmt'] = df_display['total'].apply(lambda x: f"${float(x):,.2f}")
                 
                 # Seleccionar columnas relevantes
                 columnas_mostrar = ['numero_factura', 'fecha_factura', 'cliente_nombre', 'total_fmt', 'estado']
@@ -502,8 +502,8 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                     
                     # Formatear para mostrar
                     df_display = ventas_cliente.copy()
-                    df_display['Total_Ventas'] = df_display['Total_Ventas'].apply(lambda x: f"${x:,.2f}")
-                    df_display['Ticket_Promedio'] = df_display['Ticket_Promedio'].apply(lambda x: f"${x:,.2f}")
+                    df_display['Total_Ventas'] = df_display['Total_Ventas'].apply(lambda x: f"${float(x):,.2f}")
+                    df_display['Ticket_Promedio'] = df_display['Ticket_Promedio'].apply(lambda x: f"${float(x):,.2f}")
                     
                     # Seleccionar columnas para mostrar
                     cols_mostrar = ['Nombre_Cliente', 'Total_Ventas', 'Num_Facturas', 'Ticket_Promedio', 'Primera_Compra', 'Ultima_Compra']
@@ -862,8 +862,8 @@ def generar_excel(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fe
             'Métrica': ['Total Facturas', 'Ventas Totales', 'Ticket Promedio', 'Período'],
             'Valor': [
                 len(facturas),
-                f"${df_facturas['total'].sum():,.2f}",
-                f"${df_facturas['total'].mean():,.2f}",
+                f"${float(df_facturas['total'].sum()):,.2f}",
+                f"${float(df_facturas['total'].mean()):,.2f}",
                 f"{fecha_desde} a {fecha_hasta}"
             ]
         }

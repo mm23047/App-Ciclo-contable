@@ -316,15 +316,21 @@ def lista_clientes(backend_url: str):
             
     except Exception as e:
         st.error(f"Error al cargar clientes: {e}")
+    
+    # Renderizar formulario de edición fuera del bloque de selección
+    if st.session_state.get('accion_cliente') == 'editar' and st.session_state.get('cliente_editar'):
+        st.markdown("---")
+        editar_cliente(backend_url, st.session_state.cliente_editar)
 
 def mostrar_tabla_clientes(clientes: List[Dict], backend_url: str):
     """Mostrar tabla de clientes con opciones de gestión"""
     
     # Métricas resumen
     total_clientes = len(clientes)
-    clientes_activos = len([c for c in clientes if c.get('activo', True)])
+    # Mapear estado_cliente a activo
+    clientes_activos = len([c for c in clientes if c.get('estado_cliente', 'ACTIVO') == 'ACTIVO'])
     clientes_vip = len([c for c in clientes if c.get('categoria_cliente') == 'VIP'])
-    limite_credito_total = sum(c.get('limite_credito', 0) for c in clientes)
+    limite_credito_total = sum(float(c.get('limite_credito', 0)) for c in clientes)
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -351,11 +357,18 @@ def mostrar_tabla_clientes(clientes: List[Dict], backend_url: str):
         # Formatear límite de crédito
         if 'limite_credito' in df_display.columns:
             df_display['limite_credito_fmt'] = df_display['limite_credito'].apply(
-                lambda x: f"${x:,.0f}" if x > 0 else "-"
+                lambda x: f"${float(x):,.0f}" if float(x) > 0 else "-"
             )
         
-        # Estado como emoji
-        if 'activo' in df_display.columns:
+        # Estado como emoji (mapear estado_cliente a activo)
+        if 'estado_cliente' in df_display.columns:
+            df_display['activo'] = df_display['estado_cliente'].apply(
+                lambda x: x == 'ACTIVO' if x else True
+            )
+            df_display['estado_emoji'] = df_display['activo'].apply(
+                lambda x: "🟢 Activo" if x else "🔴 Inactivo"
+            )
+        elif 'activo' in df_display.columns:
             df_display['estado_emoji'] = df_display['activo'].apply(
                 lambda x: "🟢 Activo" if x else "🔴 Inactivo"
             )
@@ -401,67 +414,135 @@ def mostrar_tabla_clientes(clientes: List[Dict], backend_url: str):
                 
                 st.markdown("### 🔧 Acciones sobre Cliente Seleccionado")
                 
+                # Crear estado persistente para las acciones
+                if 'accion_cliente' not in st.session_state:
+                    st.session_state.accion_cliente = None
+                
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    if st.button("👁️ Ver Detalles", use_container_width=True):
-                        mostrar_detalle_cliente(cliente_seleccionado)
+                    if st.button("👁️ Ver Detalles", use_container_width=True, key=f"ver_det_{cliente_seleccionado['id_cliente']}"):
+                        st.session_state.accion_cliente = 'ver_detalles'
                 
                 with col2:
-                    if st.button("✏️ Editar", use_container_width=True):
-                        editar_cliente(backend_url, cliente_seleccionado)
+                    if st.button("✏️ Editar", use_container_width=True, key=f"editar_{cliente_seleccionado['id_cliente']}"):
+                        st.session_state.accion_cliente = 'editar'
+                        st.session_state.cliente_editar = cliente_seleccionado
                 
                 with col3:
-                    estado_actual = cliente_seleccionado.get('activo', True)
-                    accion_estado = "Desactivar" if estado_actual else "Activar"
-                    if st.button(f"🔄 {accion_estado}", use_container_width=True):
+                    estado_actual = cliente_seleccionado.get('estado_cliente', 'ACTIVO') == 'ACTIVO'
+                    accion_estado = "🔴 Desactivar" if estado_actual else "🟢 Activar"
+                    if st.button(accion_estado, use_container_width=True, key=f"estado_{cliente_seleccionado['id_cliente']}"):
                         cambiar_estado_cliente(backend_url, cliente_seleccionado['id_cliente'], not estado_actual)
                 
                 with col4:
-                    if st.button("🗑️ Eliminar", use_container_width=True):
-                        if st.checkbox("Confirmar eliminación", key=f"confirm_del_{cliente_seleccionado['id_cliente']}"):
-                            eliminar_cliente(backend_url, cliente_seleccionado['id_cliente'])
+                    if st.button("🗑️ Eliminar", use_container_width=True, type="secondary", key=f"eliminar_{cliente_seleccionado['id_cliente']}"):
+                        st.session_state.accion_cliente = 'eliminar'
+                
+                # Renderizar la vista seleccionada en contenedor de ancho completo
+                if st.session_state.accion_cliente == 'ver_detalles':
+                    with st.container():
+                        mostrar_detalle_cliente(cliente_seleccionado)
+                
+                elif st.session_state.accion_cliente == 'eliminar':
+                    with st.container():
+                        st.warning(f"⚠️ ¿Está seguro que desea eliminar el cliente '{cliente_seleccionado.get('nombre')}'?")
+                        col1, col2, col3 = st.columns([1, 1, 2])
+                        with col1:
+                            if st.button("✅ Confirmar", use_container_width=True, type="primary", key=f"confirm_del_{cliente_seleccionado['id_cliente']}"):
+                                eliminar_cliente(backend_url, cliente_seleccionado['id_cliente'])
+                                st.session_state.accion_cliente = None
+                        with col2:
+                            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_del_{cliente_seleccionado['id_cliente']}"):
+                                st.session_state.accion_cliente = None
+                                st.rerun()
 
 def mostrar_detalle_cliente(cliente: Dict[str, Any]):
     """Mostrar detalle completo de un cliente"""
     
-    with st.expander(f"👤 Detalle del Cliente: {cliente.get('nombre', 'N/A')}", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**📋 Información Básica:**")
-            st.text(f"Código: {cliente.get('codigo_cliente', 'N/A')}")
-            st.text(f"Nombre: {cliente.get('nombre', 'N/A')}")
-            st.text(f"Tipo: {cliente.get('tipo_cliente', 'N/A')}")
-            st.text(f"NIT/CC: {cliente.get('nit', 'N/A')}")
-            st.text(f"Email: {cliente.get('email', 'N/A')}")
-            st.text(f"Teléfono: {cliente.get('telefono', 'N/A')}")
-            st.text(f"Ciudad: {cliente.get('ciudad', 'N/A')}")
-        
-        with col2:
-            st.markdown("**💰 Información Comercial:**")
-            st.text(f"Categoría: {cliente.get('categoria_cliente', 'N/A')}")
-            st.text(f"Canal Ventas: {cliente.get('canal_ventas', 'N/A')}")
-            st.text(f"Límite Crédito: ${cliente.get('limite_credito', 0):,.2f}")
-            st.text(f"Días Crédito: {cliente.get('dias_credito', 0)}")
-            st.text(f"Descuento: {cliente.get('descuento_comercial', 0):.1f}%")
-            st.text(f"Estado: {'Activo' if cliente.get('activo') else 'Inactivo'}")
-        
-        if cliente.get('direccion'):
-            st.markdown("**📍 Dirección:**")
-            st.text(cliente['direccion'])
-        
-        if cliente.get('observaciones'):
-            st.markdown("**📝 Observaciones:**")
-            st.text(cliente['observaciones'])
+    st.markdown(f"## 👤 Detalle del Cliente: {cliente.get('nombre', 'N/A')}")
+    st.markdown("---")
+    
+    # Información básica en tabla
+    st.markdown("### 📋 Información Básica")
+    info_basica = {
+        "Código": cliente.get('codigo_cliente', 'N/A'),
+        "Nombre/Razón Social": cliente.get('nombre', 'N/A'),
+        "Tipo de Cliente": cliente.get('tipo_cliente', 'N/A'),
+        "NIT/Cédula": cliente.get('nit', 'N/A'),
+        "Email": cliente.get('email', 'N/A'),
+        "Teléfono": cliente.get('telefono', 'N/A'),
+        "Celular": cliente.get('celular', 'N/A') if cliente.get('celular') else 'N/A',
+        "Ciudad": cliente.get('municipio', cliente.get('ciudad', 'N/A'))
+    }
+    df_info = pd.DataFrame(list(info_basica.items()), columns=['Campo', 'Valor'])
+    st.table(df_info)
+    
+    # Métricas financieras grandes
+    st.markdown("### 💰 Información Financiera")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        limite = float(cliente.get('limite_credito', 0))
+        st.metric(
+            "Límite de Crédito",
+            f"${limite:,.2f}",
+            help="Límite de crédito autorizado"
+        )
+    
+    with col2:
+        st.metric(
+            "Días de Crédito",
+            f"{cliente.get('dias_credito', 0)} días",
+            help="Plazo de crédito en días"
+        )
+    
+    with col3:
+        descuento = float(cliente.get('descuento_habitual', cliente.get('descuento_comercial', 0)))
+        st.metric(
+            "Descuento Comercial",
+            f"{descuento:.1f}%",
+            help="Descuento habitual aplicable"
+        )
+    
+    # Información comercial
+    st.markdown("### 🏷️ Clasificación Comercial")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.info(f"**Categoría:** {cliente.get('categoria_cliente', 'N/A')}")
+    
+    with col2:
+        canal = cliente.get('canal_ventas', 'N/A')
+        if canal != 'N/A':
+            st.info(f"**Canal de Ventas:** {canal}")
+    
+    with col3:
+        # Estado con color
+        estado_activo = cliente.get('estado_cliente', 'ACTIVO') == 'ACTIVO'
+        if estado_activo:
+            st.success("✅ **Estado:** Activo")
+        else:
+            st.error("🔴 **Estado:** Inactivo")
+    
+    # Dirección y observaciones en secciones separadas
+    if cliente.get('direccion'):
+        st.markdown("### 📍 Dirección")
+        st.info(cliente['direccion'])
+    
+    if cliente.get('observaciones'):
+        st.markdown("### 📝 Observaciones")
+        st.text_area("", value=cliente['observaciones'], height=100, disabled=True, label_visibility="collapsed")
 
 def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
     """Formulario para editar cliente"""
     
-    st.markdown(f"### ✏️ Editar Cliente: {cliente.get('nombre', 'N/A')}")
+    st.markdown(f"## ✏️ Editar Cliente: {cliente.get('nombre', 'N/A')}")
+    st.caption(f"Código: {cliente.get('codigo_cliente', 'N/A')}")
+    st.markdown("---")
     
     with st.form(f"form_editar_cliente_{cliente['id_cliente']}"):
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2, gap="large")
         
         with col1:
             nombre = st.text_input("Nombre/Razón Social:", value=cliente.get('nombre', ''))
@@ -475,13 +556,26 @@ def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
         
         with col2:
             direccion = st.text_area("Dirección:", value=cliente.get('direccion', ''))
-            limite_credito = st.number_input("Límite de Crédito:", value=cliente.get('limite_credito', 0.0))
-            dias_credito = st.number_input("Días de Crédito:", value=cliente.get('dias_credito', 30))
+            limite_credito = st.number_input("Límite de Crédito:", value=float(cliente.get('limite_credito', 0.0)))
+            dias_credito = st.number_input("Días de Crédito:", value=int(cliente.get('dias_credito', 30)))
             activo = st.checkbox("Activo", value=cliente.get('activo', True))
         
         observaciones = st.text_area("Observaciones:", value=cliente.get('observaciones', ''))
         
-        if st.form_submit_button("💾 Actualizar Cliente", use_container_width=True):
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            submitted = st.form_submit_button("💾 Actualizar Cliente", use_container_width=True, type="primary")
+        
+        with col2:
+            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+        
+        if cancelar:
+            st.session_state.accion_cliente = None
+            st.session_state.cliente_editar = None
+            st.rerun()
+        
+        if submitted:
             datos_actualizacion = {
                 "nombre": nombre,
                 "email": email if email else None,
@@ -505,6 +599,9 @@ def actualizar_cliente_backend(backend_url: str, id_cliente: int, datos: Dict[st
         
         if response.status_code == 200:
             st.success("✅ Cliente actualizado exitosamente")
+            # Limpiar estado de sesión
+            st.session_state.accion_cliente = None
+            st.session_state.cliente_editar = None
             st.rerun()
         else:
             error_detail = response.json().get('detail', 'Error desconocido')
@@ -633,6 +730,7 @@ def generar_analisis_basico(clientes: List[Dict]):
     
     with col4:
         if 'limite_credito' in df_clientes.columns:
+            df_clientes['limite_credito'] = df_clientes['limite_credito'].apply(lambda x: float(x) if x else 0.0)
             credito_promedio = df_clientes['limite_credito'].mean()
             st.metric("Crédito Promedio", f"${credito_promedio:,.0f}")
         else:

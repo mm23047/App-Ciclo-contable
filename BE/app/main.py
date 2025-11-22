@@ -68,6 +68,13 @@ except ImportError as e:
     print(f"Productos no disponible: {e}")
     productos_available = False
 
+try:
+    from app.routes.clientes import router as clientes_router
+    clientes_available = True
+except ImportError as e:
+    print(f"Clientes no disponible: {e}")
+    clientes_available = False
+
 from app.db import create_tables
 import os
 
@@ -119,6 +126,9 @@ if configuracion_available:
 
 if productos_available:
     app.include_router(productos_router)
+
+if clientes_available:
+    app.include_router(clientes_router)
 
 @app.on_event("startup")
 def startup_event():
