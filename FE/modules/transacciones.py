@@ -302,7 +302,7 @@ def list_transactions(backend_url: str):
             # Display table
             st.dataframe(
                 df[['id_transaccion', 'fecha_transaccion', 'descripcion', 'tipo', 'moneda', 'usuario_creacion']],
-                use_container_width=True
+                width="stretch"
             )
             
             # Action buttons for each transaction

@@ -98,7 +98,7 @@ def mostrar_catalogo(backend_url: str):
                 # Mostrar tabla con formato
                 st.dataframe(
                     df_final,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
                 
@@ -195,7 +195,7 @@ def crear_cuenta(backend_url: str):
             height=100
         )
         
-        submit_button = st.form_submit_button("💾 Crear Cuenta", use_container_width=True)
+        submit_button = st.form_submit_button("💾 Crear Cuenta", width="stretch")
         
         if submit_button:
             if codigo_cuenta and nombre_cuenta:

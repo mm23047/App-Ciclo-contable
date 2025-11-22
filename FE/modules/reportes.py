@@ -115,7 +115,7 @@ def load_libro_diario(backend_url: str, periodo_id: Optional[int] = None):
             st.dataframe(
                 df[['fecha_transaccion', 'descripcion', 'tipo_transaccion', 
                    'codigo_cuenta', 'nombre_cuenta', 'debe', 'haber']],
-                use_container_width=True
+                width="stretch"
             )
             
             # Balance validation
@@ -299,7 +299,7 @@ def load_balance_report(backend_url: str, periodo_id: int):
                 
                 st.dataframe(
                     tipo_df[['codigo_cuenta', 'nombre_cuenta', 'total_debe', 'total_haber', 'saldo']],
-                    use_container_width=True
+                    width="stretch"
                 )
             
             # Display totals

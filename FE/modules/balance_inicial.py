@@ -155,7 +155,7 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
         # Botón para guardar
         submitted = st.form_submit_button(
             "💾 Configurar Saldo Inicial",
-            use_container_width=True,
+            width="stretch",
             type="primary"
         )
         
@@ -230,7 +230,7 @@ def carga_con_plantilla(backend_url: str, periodo: Dict[str, Any]):
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("📥 Descargar Plantilla", use_container_width=True):
+        if st.button("📥 Descargar Plantilla", width="stretch"):
             generar_plantilla_saldos(backend_url)
     
     with col2:
@@ -418,7 +418,7 @@ def carga_manual_multiple(backend_url: str, periodo: Dict[str, Any]):
             st.success("✅ Ecuación contable balanceada")
         
         # Botón para procesar
-        if st.button("💾 Configurar Todos los Saldos", use_container_width=True, type="primary"):
+        if st.button("💾 Configurar Todos los Saldos", width="stretch", type="primary"):
             procesar_saldos_multiples(backend_url, periodo['id_periodo'], st.session_state.saldos_multiples)
 
 def procesar_carga_masiva(backend_url: str, id_periodo: int, df: pd.DataFrame):
@@ -653,7 +653,7 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
                 df_final = df_display[columnas_mostrar].copy()
                 df_final.columns = nombres_columnas
                 
-                st.dataframe(df_final, use_container_width=True, hide_index=True)
+                st.dataframe(df_final, width="stretch", hide_index=True)
                 
                 # Opciones de descarga y edición
                 col1, col2, col3 = st.columns(3)
@@ -721,7 +721,7 @@ def validar_balance_inicial(backend_url: str):
             ]
             periodo_validacion = st.selectbox("Período a validar:", opciones_periodos, key="validacion_periodo")
             
-            if st.button("🔍 Ejecutar Validación", use_container_width=True):
+            if st.button("🔍 Ejecutar Validación", width="stretch"):
                 nombre_periodo = periodo_validacion.split(" (")[0]
                 periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 

@@ -125,6 +125,8 @@ class Factura(Base):
     subtotal_descuento = Column(Numeric(15, 2), nullable=False)
     impuesto_iva = Column(Numeric(15, 2), nullable=False)
     otros_impuestos = Column(Numeric(15, 2), default=0.00)
+    retencion_fuente = Column(Numeric(15, 2), default=0.00)
+    reteica = Column(Numeric(15, 2), default=0.00)
     total = Column(Numeric(15, 2), nullable=False)
     
     # Estado y control
@@ -147,10 +149,9 @@ class Factura(Base):
     cliente = relationship("Cliente", back_populates="facturas")
     periodo = relationship("PeriodoContable")
     detalles = relationship("DetalleFactura", back_populates="factura", cascade="all, delete-orphan")
-    asientos_facturacion = relationship("AsientosFacturacion", back_populates="factura")
     
     def __repr__(self):
-        return f"<Factura(id={self.id_factura}, numero='{self.numero_factura}', cliente_id={self.id_cliente})>"
+        return f"<Factura(id={self.id_factura}, numero='{self.numero_factura}', cliente_id={self.id_cliente})"
 
 
 class DetalleFactura(Base):
@@ -195,21 +196,36 @@ class ResumenVentasDiarias(Base):
     usuario_generacion = Column(String(50))
     
     def __repr__(self):
-        return f"<ResumenVentasDiarias(fecha={self.fecha_venta}, total_ventas={self.total_ventas_netas})>"
+        return f"<ResumenVentasDiarias(fecha={self.fecha_venta}, total_ventas={self.total_ventas_netas})"
 
-
-class AsientosFacturacion(Base):
-    __tablename__ = "asientos_facturacion"
+class ConfiguracionFacturacion(Base):
+    __tablename__ = "configuracion_facturacion"
     
-    id_asiento_factura = Column(Integer, primary_key=True, autoincrement=True)
-    id_factura = Column(Integer, ForeignKey("facturas.id_factura"), nullable=False)
-    id_transaccion = Column(Integer, ForeignKey("transacciones.id_transaccion"), nullable=False)
-    tipo_asiento = Column(String(30), nullable=False)  # VENTA, COBRO, ANULACION, DESCUENTO
+    id_configuracion = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # Información de la empresa
+    empresa_nit = Column(String(20), nullable=False)
+    empresa_nombre = Column(String(200), nullable=False)
+    empresa_direccion = Column(Text)
+    empresa_telefono = Column(String(20))
+    empresa_email = Column(String(100))
+    empresa_web = Column(String(200))
+    
+    # Parámetros fiscales
+    iva_porcentaje = Column(Numeric(5, 2), nullable=False, default=13.00)
+    retefuente_porcentaje = Column(Numeric(5, 2), default=0.00)
+    reteica_porcentaje = Column(Numeric(5, 3), default=0.00)
+    
+    # Numeración de facturas
+    prefijo_factura = Column(String(10), default='FV')
+    numero_inicial = Column(Integer, default=1)
+    numero_actual = Column(Integer, default=1)
+    
+    # Control
+    activo = Column(Boolean, default=True)
     fecha_creacion = Column(DateTime, default=func.current_timestamp())
-    
-    # Relaciones
-    factura = relationship("Factura", back_populates="asientos_facturacion")
-    transaccion = relationship("Transaccion", back_populates="asientos_facturacion")
+    fecha_actualizacion = Column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp())
+    usuario_actualizacion = Column(String(50))
     
     def __repr__(self):
-        return f"<AsientosFacturacion(id={self.id_asiento_factura}, factura_id={self.id_factura}, tipo='{self.tipo_asiento}')>"
+        return f"<ConfiguracionFacturacion(empresa={self.empresa_nombre}, iva={self.iva_porcentaje}%)>"

@@ -110,7 +110,7 @@ def generar_balanza(backend_url: str):
             # Filtro por texto
             filtro_nombre = st.text_input("Buscar en nombres:", help="Texto a buscar en nombres de cuentas")
     
-    if st.button("📊 Generar Balanza de Comprobación", use_container_width=True, type="primary"):
+    if st.button("📊 Generar Balanza de Comprobación", width="stretch", type="primary"):
         # Extraer ID del período
         nombre_periodo = periodo_seleccionado.split(" (")[0]
         periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
@@ -307,7 +307,7 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         # Mostrar tabla
         st.dataframe(
             df_final,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "Código": st.column_config.TextColumn(width="small"),
@@ -423,7 +423,7 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
                     names='tipo_cuenta',
                     title='Distribución de Saldos por Tipo de Cuenta'
                 )
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.plotly_chart(fig_pie, width="stretch")
                 
                 # Gráfico 2: Top cuentas por saldo (Bar chart)
                 st.markdown("#### 📊 Top 15 Cuentas por Saldo")
@@ -446,7 +446,7 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
                     xaxis_tickangle=-45
                 )
                 
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width="stretch")
                 
                 # Gráfico 3: Análisis de movimientos (Scatter plot)
                 st.markdown("#### 📊 Análisis de Actividad vs Saldo")
@@ -469,7 +469,7 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
                     yaxis_title="Saldo Final ($)"
                 )
                 
-                st.plotly_chart(fig_scatter, use_container_width=True)
+                st.plotly_chart(fig_scatter, width="stretch")
                 
                 # Tabla de estadísticas
                 st.markdown("#### 📊 Estadísticas por Tipo de Cuenta")
@@ -495,7 +495,7 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
                                                    'Total_Debe_fmt', 'Total_Haber_fmt']].copy()
                 estadisticas_display.columns = ['Cantidad', 'Suma Saldos', 'Promedio', 'Total Debe', 'Total Haber']
                 
-                st.dataframe(estadisticas_display, use_container_width=True)
+                st.dataframe(estadisticas_display, width="stretch")
                 
             else:
                 st.info("No hay datos para generar gráficos")
@@ -550,7 +550,7 @@ def comparativo_periodos(backend_url: str):
                 help="Mostrar solo diferencias mayores a este monto"
             )
         
-        if st.button("📊 Generar Comparativo", use_container_width=True):
+        if st.button("📊 Generar Comparativo", width="stretch"):
             if periodo1 != periodo2:
                 generar_comparativo_periodos(
                     backend_url, 
@@ -712,7 +712,7 @@ def mostrar_comparativo(
         df_final = df_display[columnas_mostrar].copy()
         df_final.columns = nombres_columnas
         
-        st.dataframe(df_final, use_container_width=True, hide_index=True)
+        st.dataframe(df_final, width="stretch", hide_index=True)
         
         # Gráficos de análisis
         st.markdown("### 📊 Análisis Gráfico del Comparativo")
@@ -733,7 +733,7 @@ def mostrar_comparativo(
                     title='Top Incrementos',
                     hover_data=['nombre_cuenta', 'porcentaje_variacion']
                 )
-                st.plotly_chart(fig_incrementos, use_container_width=True)
+                st.plotly_chart(fig_incrementos, width="stretch")
             else:
                 st.info("No hay incrementos significativos")
         
@@ -750,7 +750,7 @@ def mostrar_comparativo(
                     title='Top Decrementos',
                     hover_data=['nombre_cuenta', 'porcentaje_variacion']
                 )
-                st.plotly_chart(fig_decrementos, use_container_width=True)
+                st.plotly_chart(fig_decrementos, width="stretch")
             else:
                 st.info("No hay decrementos significativos")
         

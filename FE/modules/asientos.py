@@ -260,7 +260,7 @@ def list_asientos_for_transaction(backend_url: str, transaction_id: int, account
             
             st.dataframe(
                 df[display_columns],
-                use_container_width=True
+                width="stretch"
             )
             
             # Calculate and display totals

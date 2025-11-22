@@ -116,7 +116,7 @@ def crear_partida_ajuste(backend_url: str):
         # Botón para guardar datos del encabezado
         guardar_encabezado = st.form_submit_button(
             "💾 Guardar Encabezado", 
-            use_container_width=True
+            width="stretch"
         )
         
         if guardar_encabezado:
@@ -241,7 +241,7 @@ def crear_partida_ajuste(backend_url: str):
             st.warning("⚠️ Los movimientos no están balanceados. Debe = Haber")
     
     # Botón para crear la partida (fuera del form, usa datos de session_state)
-    if st.button("💾 Crear Partida de Ajuste", use_container_width=True, type="primary"):
+    if st.button("💾 Crear Partida de Ajuste", width="stretch", type="primary"):
         encabezado = st.session_state.get('ajuste_encabezado', {})
         
         if not encabezado:
@@ -329,7 +329,6 @@ def crear_ajuste_backend(
             st.session_state.movimientos_ajuste = []  # Limpiar movimientos
             if 'ajuste_encabezado' in st.session_state:
                 del st.session_state.ajuste_encabezado  # Limpiar encabezado
-            st.balloons()
             
             # Mostrar información del ajuste creado
             ajuste_creado = response.json()
@@ -391,7 +390,7 @@ def consultar_partidas_ajuste(backend_url: str):
         fecha_desde = st.date_input("Desde:", value=None, help="Fecha opcional para filtrar")
         fecha_hasta = st.date_input("Hasta:", value=None, help="Fecha opcional para filtrar")
     
-    if st.button("🔍 Buscar Partidas de Ajuste", use_container_width=True):
+    if st.button("🔍 Buscar Partidas de Ajuste", width="stretch"):
         obtener_partidas_ajuste(
             backend_url, 
             periodo_filtro,
@@ -523,7 +522,7 @@ def mostrar_partidas_ajuste(partidas: List[Dict[str, Any]]):
                 
                 df_asientos = pd.DataFrame(asientos_data)
                 
-                st.dataframe(df_asientos, use_container_width=True, hide_index=True)
+                st.dataframe(df_asientos, width="stretch", hide_index=True)
 
 def reportes_ajustes(backend_url: str):
     """Generar reportes de partidas de ajuste"""
@@ -575,7 +574,7 @@ def reportes_ajustes(backend_url: str):
         help="Incluir ajustes hasta esta fecha"
     )
     
-    if st.button("📊 Generar Reporte", use_container_width=True):
+    if st.button("📊 Generar Reporte", width="stretch"):
         generar_reporte_especifico(
             backend_url,
             tipo_reporte,
@@ -730,7 +729,7 @@ def mostrar_analisis_por_tipo(partidas: List[Dict]):
         })
     
     df_tipos = pd.DataFrame(datos_tabla)
-    st.dataframe(df_tipos, use_container_width=True, hide_index=True)
+    st.dataframe(df_tipos, width="stretch", hide_index=True)
 
 def mostrar_evolucion_temporal(partidas: List[Dict]):
     """Mostrar evolución temporal de ajustes"""
@@ -762,7 +761,7 @@ def mostrar_evolucion_temporal(partidas: List[Dict]):
         })
     
     df_evolucion = pd.DataFrame(datos_tabla)
-    st.dataframe(df_evolucion, use_container_width=True, hide_index=True)
+    st.dataframe(df_evolucion, width="stretch", hide_index=True)
 
 def mostrar_detalle_completo(partidas: List[Dict]):
     """Mostrar detalle completo de partidas"""

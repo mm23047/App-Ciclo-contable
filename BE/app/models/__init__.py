@@ -10,7 +10,7 @@ from .partidas_ajuste import PartidaAjuste, AsientoAjuste
 from .balanza_comprobacion import BalanzaComprobacion
 from .balance_inicial import BalanceInicial
 from .estados_financieros import ConfiguracionEstadosFinancieros, EstadosFinancierosHistorico
-from .facturacion import Cliente, Producto, Factura, DetalleFactura, ResumenVentasDiarias, AsientosFacturacion
+from .facturacion import Cliente, Producto, Factura, DetalleFactura, ResumenVentasDiarias
 from .configuracion_categoria import ConfiguracionContableCategoria
 
 __all__ = [
@@ -31,6 +31,5 @@ __all__ = [
     "Factura",
     "DetalleFactura",
     "ResumenVentasDiarias",
-    "AsientosFacturacion",
     "ConfiguracionContableCategoria"
 ]

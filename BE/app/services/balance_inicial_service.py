@@ -48,7 +48,7 @@ def crear_balance_inicial(db: Session, balance_data: BalanceInicialCreate, usuar
     if balance_existente:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ya existe un balance inicial para la cuenta {cuenta.codigo_cuenta} en el período {periodo.nombre_periodo}"
+            detail=f"Ya existe un balance inicial para la cuenta {cuenta.codigo_cuenta} en el período {periodo.descripcion}"
         )
     
     # Validar que el saldo inicial tenga la naturaleza correcta según tipo de cuenta
@@ -243,7 +243,7 @@ def generar_balances_desde_periodo_anterior(
                     id_cuenta=balance_anterior.id_cuenta,
                     id_periodo=periodo_actual_id,
                     saldo_inicial=balance_anterior.saldo_inicial,  # Simplificado
-                    observaciones=f"Generado automáticamente desde período {periodo_anterior.nombre_periodo}",
+                    observaciones=f"Generado automáticamente desde período {periodo_anterior.descripcion}",
                     fecha_creacion=date.today(),
                     usuario_creacion=usuario,
                     estado_balance='ACTIVO'

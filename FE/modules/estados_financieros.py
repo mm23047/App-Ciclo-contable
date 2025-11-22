@@ -72,7 +72,7 @@ def balance_general(backend_url: str):
         mostrar_codigos = st.checkbox("Mostrar códigos de cuenta", value=True)
         comparativo_periodo_anterior = st.checkbox("Comparativo con período anterior", value=False)
     
-    if st.button("📊 Generar Balance General", use_container_width=True, type="primary"):
+    if st.button("📊 Generar Balance General", width="stretch", type="primary"):
         nombre_periodo = periodo_seleccionado.split(" (")[0]
         periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
@@ -238,7 +238,7 @@ def mostrar_seccion_balance(seccion: Dict[str, Any], mostrar_codigos: bool, comp
         
         if data:
             df = pd.DataFrame(data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
 
 def mostrar_indicadores_balance(total_activos: float, total_pasivos: float, total_patrimonio: float, balance_data: Dict):
     """Mostrar indicadores financieros básicos"""
@@ -364,7 +364,7 @@ def estado_resultados(backend_url: str):
         incluir_cuentas_cero = st.checkbox("Incluir cuentas con movimiento cero", value=False, key="cero_resultados")
         mostrar_margenes = st.checkbox("Mostrar márgenes", value=True)
     
-    if st.button("📊 Generar Estado de Resultados", use_container_width=True, type="primary"):
+    if st.button("📊 Generar Estado de Resultados", width="stretch", type="primary"):
         nombre_periodo = periodo_seleccionado.split(" (")[0]
         periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
@@ -522,7 +522,7 @@ def mostrar_seccion_resultados(seccion: Dict[str, Any]):
         
         if data:
             df = pd.DataFrame(data)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
 
 def mostrar_margenes_rentabilidad(total_ingresos: float, utilidad_neta: float, resultados_data: Dict):
     """Mostrar márgenes de rentabilidad"""
@@ -592,7 +592,7 @@ def mostrar_grafico_resultados(resultados_data: Dict[str, Any]):
         height=400
     )
     
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 def generar_descarga_resultados(resultados_data: Dict[str, Any]):
     """Generar archivo para descarga del estado de resultados"""
@@ -675,7 +675,7 @@ def analisis_comparativo(backend_url: str):
             ["Balance General", "Estado de Resultados", "Análisis Integral"]
         )
         
-        if st.button("📊 Generar Análisis Comparativo", use_container_width=True):
+        if st.button("📊 Generar Análisis Comparativo", width="stretch"):
             if periodo_base != periodo_comparacion:
                 generar_analisis_comparativo_ejecutar(
                     backend_url, 

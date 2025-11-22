@@ -77,7 +77,7 @@ def consultar_mayor(backend_url: str):
         
         mostrar_solo_con_movimientos = st.checkbox("Solo cuentas con movimientos", value=True)
     
-    if st.button("📊 Generar Consulta", use_container_width=True):
+    if st.button("📊 Generar Consulta", width="stretch"):
         if periodo_seleccionado:
             # Extraer ID del período
             nombre_periodo = periodo_seleccionado.split(" (")[0]
@@ -187,7 +187,7 @@ def mostrar_mayor_cuenta_especifica(datos_cuenta: Dict[str, Any]):
         
         st.dataframe(
             df_display,
-            use_container_width=True,
+            width="stretch",
             hide_index=True
         )
         
@@ -209,7 +209,7 @@ def mostrar_mayor_cuenta_especifica(datos_cuenta: Dict[str, Any]):
                 hovermode='x unified'
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         # Resumen estadístico
         st.markdown("### 📊 Resumen Estadístico")
@@ -274,7 +274,7 @@ def mostrar_mayor_multiple_cuentas(datos_cuentas: List[Dict[str, Any]]):
     
     st.dataframe(
         df_resumen[columnas_mostrar],
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
     
@@ -349,7 +349,7 @@ def generar_graficos_mayor(backend_url: str, id_periodo: int):
                     values='cantidad_movimientos',
                     title='Distribución de Movimientos por Tipo de Cuenta'
                 )
-                st.plotly_chart(fig_tipo, use_container_width=True)
+                st.plotly_chart(fig_tipo, width="stretch")
                 
                 # Gráfico de barras de saldos finales
                 df_top_saldos = df_analisis.nlargest(10, 'saldo_final')
@@ -367,7 +367,7 @@ def generar_graficos_mayor(backend_url: str, id_periodo: int):
                     yaxis_title="Saldo Final ($)"
                 )
                 
-                st.plotly_chart(fig_saldos, use_container_width=True)
+                st.plotly_chart(fig_saldos, width="stretch")
                 
                 # Gráfico de actividad de cuentas
                 fig_actividad = px.scatter(
@@ -384,7 +384,7 @@ def generar_graficos_mayor(backend_url: str, id_periodo: int):
                     yaxis_title="Saldo Final ($)"
                 )
                 
-                st.plotly_chart(fig_actividad, use_container_width=True)
+                st.plotly_chart(fig_actividad, width="stretch")
                 
             else:
                 st.info("No hay datos de análisis disponibles para este período")
@@ -518,7 +518,7 @@ def generar_resumen_estadistico(
                 st.dataframe(
                     df_display[['Código', 'Nombre', 'Tipo', 'Saldo Inicial', 
                               'Total Debe', 'Total Haber', 'Saldo Final', 'Movimientos']],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
                 

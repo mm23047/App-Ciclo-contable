@@ -272,7 +272,7 @@ def gestionar_manual(backend_url: str):
         
         # Botón de envío
         texto_boton = "🔄 Actualizar Manual" if manual_editar else "💾 Crear Manual"
-        submit_button = st.form_submit_button(texto_boton, use_container_width=True)
+        submit_button = st.form_submit_button(texto_boton, width="stretch")
         
         if submit_button:
             if cuenta_seleccionada and descripcion_cuenta and naturaleza_cuenta:
@@ -360,7 +360,7 @@ def buscar_manual(backend_url: str):
         
         solo_con_ejemplos = st.checkbox("Solo con ejemplos de movimientos", value=False)
     
-    if st.button("🔍 Buscar", use_container_width=True):
+    if st.button("🔍 Buscar", width="stretch"):
         try:
             # Obtener todos los manuales y filtrar localmente
             response = requests.get(f"{backend_url}/api/manual-cuentas")

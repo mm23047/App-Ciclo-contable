@@ -169,7 +169,7 @@ def mostrar_graficos_dashboard(datos: Dict[str, Any]):
             xaxis_title="Fecha",
             yaxis_title="Ventas ($)"
         )
-        st.plotly_chart(fig_ventas, use_container_width=True)
+        st.plotly_chart(fig_ventas, width="stretch")
     
     # Gráficos en dos columnas
     col1, col2 = st.columns(2)
@@ -188,7 +188,7 @@ def mostrar_graficos_dashboard(datos: Dict[str, Any]):
                 names='Categoría',
                 title='Distribución por Categoría'
             )
-            st.plotly_chart(fig_cat, use_container_width=True)
+            st.plotly_chart(fig_cat, width="stretch")
     
     with col2:
         # Métodos de pago
@@ -204,7 +204,7 @@ def mostrar_graficos_dashboard(datos: Dict[str, Any]):
                 y='Cantidad',
                 title='Facturas por Método de Pago'
             )
-            st.plotly_chart(fig_metodos, use_container_width=True)
+            st.plotly_chart(fig_metodos, width="stretch")
 
 def generar_dashboard_simulado(backend_url: str, fecha_inicio: date, fecha_fin: date):
     """Generar dashboard con datos reales disponibles"""
@@ -274,7 +274,7 @@ def generar_graficos_basicos(facturas: List[Dict]):
             y='total',
             title='Ventas por Día'
         )
-        st.plotly_chart(fig_diarias, use_container_width=True)
+        st.plotly_chart(fig_diarias, width="stretch")
     
     # Distribución de montos
     col1, col2 = st.columns(2)
@@ -288,7 +288,7 @@ def generar_graficos_basicos(facturas: List[Dict]):
             nbins=20,
             title='Distribución de Montos de Facturas'
         )
-        st.plotly_chart(fig_hist, use_container_width=True)
+        st.plotly_chart(fig_hist, width="stretch")
     
     with col2:
         # Estados de facturas si está disponible
@@ -301,7 +301,7 @@ def generar_graficos_basicos(facturas: List[Dict]):
                 names=estados_count.index,
                 title='Distribución por Estado'
             )
-            st.plotly_chart(fig_estados, use_container_width=True)
+            st.plotly_chart(fig_estados, width="stretch")
 
 def reportes_detallados(backend_url: str):
     """Reportes detallados de ventas"""
@@ -412,7 +412,7 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                     
                     df_tabla.columns = [nombres_cols.get(col, col) for col in df_tabla.columns]
                     
-                    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                    st.dataframe(df_tabla, width="stretch", hide_index=True)
                 
                 # Gráfico de evolución
                 if len(facturas) > 1:
@@ -428,7 +428,7 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                         title='Evolución de Ventas en el Período',
                         markers=True
                     )
-                    st.plotly_chart(fig_evolucion, use_container_width=True)
+                    st.plotly_chart(fig_evolucion, width="stretch")
             else:
                 st.info("📭 No se encontraron ventas en el período seleccionado")
         else:
@@ -510,7 +510,7 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                     df_tabla = df_display[cols_mostrar].copy()
                     df_tabla.columns = ['Cliente', 'Total Ventas', 'Facturas', 'Ticket Prom.', 'Primera Compra', 'Última Compra']
                     
-                    st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+                    st.dataframe(df_tabla, width="stretch", hide_index=True)
                     
                     # Gráfico de top clientes
                     if len(ventas_cliente) > 0:
@@ -526,7 +526,7 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                             title='Top 10 Clientes por Volumen de Ventas'
                         )
                         fig_clientes.update_layout(yaxis={'categoryorder': 'total ascending'})
-                        st.plotly_chart(fig_clientes, use_container_width=True)
+                        st.plotly_chart(fig_clientes, width="stretch")
                 else:
                     st.warning("⚠️ No se encontró información de clientes en las facturas")
             else:
@@ -604,7 +604,7 @@ def analisis_comparativo(backend_url: str):
         periodo2_inicio = st.date_input("Desde (P2):", value=date.today() - timedelta(days=30), key="comp_p2_inicio")
         periodo2_fin = st.date_input("Hasta (P2):", value=date.today(), key="comp_p2_fin")
     
-    if st.button("🔍 Generar Comparativo", use_container_width=True):
+    if st.button("🔍 Generar Comparativo", width="stretch"):
         generar_comparativo_periodos(backend_url, periodo1_inicio, periodo1_fin, periodo2_inicio, periodo2_fin)
 
 def generar_comparativo_periodos(backend_url: str, p1_inicio: date, p1_fin: date, p2_inicio: date, p2_fin: date):
@@ -714,7 +714,7 @@ def mostrar_comparativo_metricas(metricas1: Dict, metricas2: Dict, p1_inicio: da
         yaxis_title='Valores'
     )
     
-    st.plotly_chart(fig_comp, use_container_width=True)
+    st.plotly_chart(fig_comp, width="stretch")
 
 def analisis_periodo_simple(backend_url: str, tipo_periodo: str):
     """Análisis simple por período"""
@@ -802,7 +802,7 @@ def exportar_reportes(backend_url: str):
     incluir_resumen = st.checkbox("Incluir Resumen Ejecutivo", value=True)
     
     # Botón de exportación
-    if st.button("📥 Generar y Descargar Reporte", use_container_width=True, type="primary"):
+    if st.button("📥 Generar y Descargar Reporte", width="stretch", type="primary"):
         generar_exportacion(
             backend_url, 
             tipo_exportacion, 

@@ -25,7 +25,6 @@ class Transaccion(Base):
     # Relaciones
     periodo = relationship("PeriodoContable", back_populates="transacciones")
     asientos = relationship("Asiento", back_populates="transaccion", cascade="all, delete-orphan")
-    asientos_facturacion = relationship("AsientosFacturacion", back_populates="transaccion")
     
     # TODO: Implementar restricciones CHECK en producción:
     # CHECK (tipo IN ('INGRESO','EGRESO'))

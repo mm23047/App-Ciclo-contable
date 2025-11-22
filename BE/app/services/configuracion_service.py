@@ -467,7 +467,7 @@ def validar_configuracion_sistema(db: Session) -> Dict[str, Any]:
     # Validar período activo
     try:
         periodo_activo = db.query(PeriodoContable).filter(
-            PeriodoContable.estado_periodo == 'ACTIVO'
+            PeriodoContable.estado == 'ABIERTO'
         ).first()
         if periodo_activo:
             validaciones["periodo_activo"]["configurado"] = True

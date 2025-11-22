@@ -10,11 +10,15 @@ from app.db import get_db
 from app.schemas.facturacion import (
     ClienteCreate, ClienteUpdate, ClienteRead,
     ProductoCreate, ProductoUpdate, ProductoRead,
-    FacturaCreate, FacturaRead, DetalleFacturaCreate
+    FacturaCreate, FacturaRead, DetalleFacturaCreate,
+    ConfiguracionFacturacionCreate, ConfiguracionFacturacionUpdate, ConfiguracionFacturacionRead
 )
 from app.services.facturacion_service import (
     crear_cliente, crear_producto, crear_factura_completa, obtener_facturas_cliente,
-    obtener_reporte_ventas_periodo, anular_factura, obtener_cuentas_por_cobrar
+    obtener_reporte_ventas_periodo, anular_factura, obtener_cuentas_por_cobrar,
+    obtener_reporte_ventas_por_cliente, obtener_reporte_ventas_por_producto,
+    obtener_reporte_tendencias, obtener_configuracion_facturacion,
+    crear_configuracion_facturacion, actualizar_configuracion_facturacion
 )
 from app.models.facturacion import Cliente, Producto, Factura
 
@@ -82,15 +86,27 @@ def listar_productos(
     return query.offset(skip).limit(limit).all()
 
 # Rutas para Facturas
-@router.post("/facturas", response_model=FacturaRead)
+@router.post("/facturas", response_model=FacturaRead, status_code=status.HTTP_201_CREATED)
 def crear_nueva_factura(
     factura: FacturaCreate,
-    detalles: List[DetalleFacturaCreate],
-    generar_contabilidad: bool = Query(True),
     db: Session = Depends(get_db)
 ):
     """Crear nueva factura con detalles"""
-    return crear_factura_completa(db, factura, detalles, "API_USER", generar_contabilidad)
+    return crear_factura_completa(db, factura, factura.detalles, "API_USER")
+
+@router.get("/facturas", response_model=List[FacturaRead])
+def listar_facturas(
+    estado: Optional[str] = Query(None),
+    fecha_desde: Optional[date] = Query(None),
+    fecha_hasta: Optional[date] = Query(None),
+    numero_factura: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
+):
+    """Listar todas las facturas con filtros opcionales"""
+    from app.services.facturacion_service import buscar_facturas
+    return buscar_facturas(db, estado, fecha_desde, fecha_hasta, numero_factura, limit, offset)
 
 @router.get("/facturas/cliente/{cliente_id}", response_model=List[FacturaRead])
 def obtener_facturas_por_cliente(
@@ -131,13 +147,13 @@ def anular_factura_endpoint(
 # Rutas para Reportes
 @router.get("/reportes/ventas")
 def reporte_ventas(
-    fecha_inicio: date,
-    fecha_fin: date,
+    fecha_desde: date = Query(..., description="Fecha de inicio del período"),
+    fecha_hasta: date = Query(..., description="Fecha de fin del período"),
     cliente_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     """Generar reporte de ventas por período"""
-    return obtener_reporte_ventas_periodo(db, fecha_inicio, fecha_fin, cliente_id)
+    return obtener_reporte_ventas_periodo(db, fecha_desde, fecha_hasta, cliente_id)
 
 @router.get("/reportes/cuentas-por-cobrar")
 def reporte_cuentas_por_cobrar(
@@ -146,3 +162,54 @@ def reporte_cuentas_por_cobrar(
 ):
     """Obtener reporte de cuentas por cobrar"""
     return obtener_cuentas_por_cobrar(db, fecha_corte)
+
+@router.get("/reportes/ventas-cliente")
+def reporte_ventas_cliente(
+    fecha_desde: date = Query(..., description="Fecha de inicio del período"),
+    fecha_hasta: date = Query(..., description="Fecha de fin del período"),
+    db: Session = Depends(get_db)
+):
+    """Generar reporte de ventas agrupado por cliente"""
+    return obtener_reporte_ventas_por_cliente(db, fecha_desde, fecha_hasta)
+
+@router.get("/reportes/ventas-producto")
+def reporte_ventas_producto(
+    fecha_desde: date = Query(..., description="Fecha de inicio del período"),
+    fecha_hasta: date = Query(..., description="Fecha de fin del período"),
+    db: Session = Depends(get_db)
+):
+    """Generar reporte de ventas agrupado por producto"""
+    return obtener_reporte_ventas_por_producto(db, fecha_desde, fecha_hasta)
+
+@router.get("/reportes/tendencias-ventas")
+def reporte_tendencias_ventas(
+    fecha_desde: date = Query(..., description="Fecha de inicio del período"),
+    fecha_hasta: date = Query(..., description="Fecha de fin del período"),
+    db: Session = Depends(get_db)
+):
+    """Generar reporte de tendencias de ventas"""
+    return obtener_reporte_tendencias(db, fecha_desde, fecha_hasta)
+
+# Rutas para Configuración
+@router.get("/configuracion", response_model=ConfiguracionFacturacionRead)
+def obtener_configuracion(db: Session = Depends(get_db)):
+    """Obtener configuración activa de facturación"""
+    return obtener_configuracion_facturacion(db)
+
+@router.post("/configuracion", response_model=ConfiguracionFacturacionRead)
+def crear_configuracion(
+    config: ConfiguracionFacturacionCreate,
+    db: Session = Depends(get_db)
+):
+    """Crear nueva configuración de facturación"""
+    return crear_configuracion_facturacion(db, config)
+
+@router.put("/configuracion", response_model=ConfiguracionFacturacionRead)
+def actualizar_configuracion(
+    config: ConfiguracionFacturacionUpdate,
+    db: Session = Depends(get_db)
+):
+    """Actualizar configuración activa de facturación"""
+    return actualizar_configuracion_facturacion(db, config)
+    """Generar reporte de tendencias de ventas"""
+    return obtener_reporte_tendencias(db, fecha_desde, fecha_hasta)

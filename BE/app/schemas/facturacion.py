@@ -121,7 +121,7 @@ class FacturaBase(BaseModel):
     usuario_creacion: str = Field(..., min_length=1, max_length=50, description="Usuario que crea la factura")
 
 class FacturaCreate(BaseModel):
-    numero_factura: str = Field(..., max_length=30)
+    numero_factura: Optional[str] = Field(None, max_length=30)
     serie_factura: str = Field(default="A", max_length=10)
     fecha_emision: date
     fecha_vencimiento: Optional[date] = None
@@ -145,10 +145,65 @@ class FacturaRead(FacturaBase):
     subtotal_descuento: Decimal
     impuesto_iva: Decimal
     otros_impuestos: Decimal
+    retencion_fuente: Decimal
+    reteica: Decimal
     total: Decimal
     estado_factura: str
     fecha_creacion: datetime
     detalles: List[DetalleFacturaRead] = []
+    
+    class Config:
+        from_attributes = True
+
+# Schemas para Configuración de Facturación
+class ConfiguracionFacturacionBase(BaseModel):
+    # Información de la empresa
+    empresa_nit: str = Field(..., min_length=1, max_length=20)
+    empresa_nombre: str = Field(..., min_length=1, max_length=200)
+    empresa_direccion: Optional[str] = None
+    empresa_telefono: Optional[str] = Field(None, max_length=20)
+    empresa_email: Optional[str] = Field(None, max_length=100)
+    empresa_web: Optional[str] = Field(None, max_length=200)
+    
+    # Parámetros fiscales
+    iva_porcentaje: Decimal = Field(default=Decimal('13.00'), ge=0, le=100)
+    retefuente_porcentaje: Decimal = Field(default=Decimal('0.00'), ge=0, le=100)
+    reteica_porcentaje: Decimal = Field(default=Decimal('0.00'), ge=0, le=100)
+    
+    # Numeración de facturas
+    prefijo_factura: str = Field(default='FV', max_length=10)
+    numero_inicial: int = Field(default=1, ge=1)
+    numero_actual: int = Field(default=1, ge=1)
+
+class ConfiguracionFacturacionCreate(ConfiguracionFacturacionBase):
+    usuario_actualizacion: str = Field(..., min_length=1, max_length=50)
+
+class ConfiguracionFacturacionUpdate(BaseModel):
+    # Información de la empresa
+    empresa_nit: Optional[str] = Field(None, min_length=1, max_length=20)
+    empresa_nombre: Optional[str] = Field(None, min_length=1, max_length=200)
+    empresa_direccion: Optional[str] = None
+    empresa_telefono: Optional[str] = Field(None, max_length=20)
+    empresa_email: Optional[str] = Field(None, max_length=100)
+    empresa_web: Optional[str] = Field(None, max_length=200)
+    
+    # Parámetros fiscales
+    iva_porcentaje: Optional[Decimal] = Field(None, ge=0, le=100)
+    retefuente_porcentaje: Optional[Decimal] = Field(None, ge=0, le=100)
+    reteica_porcentaje: Optional[Decimal] = Field(None, ge=0, le=100)
+    
+    # Numeración de facturas
+    prefijo_factura: Optional[str] = Field(None, max_length=10)
+    numero_inicial: Optional[int] = Field(None, ge=1)
+    numero_actual: Optional[int] = Field(None, ge=1)
+    
+    usuario_actualizacion: str = Field(..., min_length=1, max_length=50)
+
+class ConfiguracionFacturacionRead(ConfiguracionFacturacionBase):
+    id_configuracion: int
+    activo: bool
+    fecha_creacion: datetime
+    fecha_actualizacion: datetime
     
     class Config:
         from_attributes = True

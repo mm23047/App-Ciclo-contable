@@ -5,17 +5,13 @@ Maneja la lógica de negocio para facturación e integración contable automáti
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, desc
 from fastapi import HTTPException, status
-from app.models.facturacion import Cliente, Producto, Factura, DetalleFactura
-from app.models.catalogo_cuentas import CatalogoCuentas
-from app.models.transaccion import Transaccion
-from app.models.asiento import Asiento
+from app.models.facturacion import Cliente, Producto, Factura, DetalleFactura, ConfiguracionFacturacion
 from app.models.periodo import PeriodoContable
 from app.schemas.facturacion import (
     ClienteCreate, ClienteUpdate, ProductoCreate, ProductoUpdate,
-    FacturaCreate, FacturaUpdate, DetalleFacturaCreate
+    FacturaCreate, FacturaUpdate, DetalleFacturaCreate,
+    ConfiguracionFacturacionCreate, ConfiguracionFacturacionUpdate
 )
-from app.schemas.transaccion import TransaccionCreate
-from app.schemas.asiento import AsientoCreate
 from typing import Dict, List, Optional
 from decimal import Decimal
 from datetime import date, datetime
@@ -97,15 +93,16 @@ def crear_producto(db: Session, producto_data: ProductoCreate, usuario: str) -> 
         )
 
 def crear_factura_completa(
-    db: Session, 
-    factura_data: FacturaCreate, 
+    db: Session,
+    factura_data: FacturaCreate,
     detalles: List[DetalleFacturaCreate],
-    usuario: str,
-    generar_contabilidad: bool = True
+    usuario: str
 ) -> Factura:
     """
-    Crear factura completa con detalles y opcionalmente generar asientos contables
+    Crear factura completa con detalles usando configuración fiscal
     """
+    # Cargar configuración fiscal
+    config = obtener_configuracion_facturacion(db)
     
     # Validar que el cliente exista
     cliente = db.query(Cliente).filter(
@@ -120,12 +117,13 @@ def crear_factura_completa(
     
     # Validar que todos los productos existan
     productos_ids = [detalle.id_producto for detalle in detalles]
+    productos_ids_unicos = list(set(productos_ids))  # Obtener IDs únicos
     productos = db.query(Producto).filter(
-        Producto.id_producto.in_(productos_ids),
+        Producto.id_producto.in_(productos_ids_unicos),
         Producto.estado_producto == 'ACTIVO'
     ).all()
     
-    if len(productos) != len(productos_ids):
+    if len(productos) != len(productos_ids_unicos):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uno o más productos no encontrados o inactivos"
@@ -134,12 +132,12 @@ def crear_factura_completa(
     productos_map = {p.id_producto: p for p in productos}
     
     try:
-        # Generar número de factura automático
-        ultimo_numero = db.query(func.max(Factura.numero_factura)).filter(
-            func.extract('year', Factura.fecha_factura) == date.today().year
-        ).scalar() or 0
-        
-        nuevo_numero = ultimo_numero + 1
+        # Generar número de factura usando configuración
+        if factura_data.numero_factura:
+            numero_factura = factura_data.numero_factura
+        else:
+            # Usar prefijo y número actual de la configuración
+            numero_factura = f"{config.prefijo_factura}-{str(config.numero_actual).zfill(4)}"
         
         # Calcular totales
         subtotal = Decimal('0.00')
@@ -156,15 +154,17 @@ def crear_factura_completa(
             if cantidad <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cantidad debe ser mayor a 0 para producto {producto.nombre_producto}"
+                    detail=f"Cantidad debe ser mayor a 0 para producto {producto.nombre}"
                 )
             
             subtotal_linea = precio_unitario * Decimal(str(cantidad))
             
-            # Calcular IVA si aplica
+            # Calcular IVA si aplica usando configuración fiscal
             iva_linea = Decimal('0.00')
-            if producto.aplica_iva and factura_data.aplica_iva:
-                iva_linea = subtotal_linea * Decimal('0.13')  # IVA 13% El Salvador
+            if producto.aplica_iva:
+                # Usar porcentaje de IVA de la configuración
+                iva_porcentaje = Decimal(str(config.iva_porcentaje)) / Decimal('100')
+                iva_linea = subtotal_linea * iva_porcentaje
             
             total_linea = subtotal_linea + iva_linea
             
@@ -179,23 +179,38 @@ def crear_factura_completa(
             subtotal += subtotal_linea
             total_iva += iva_linea
         
-        total_factura = subtotal + total_iva
+        # Calcular retenciones usando configuración fiscal
+        retencion_fuente = Decimal('0.00')
+        reteica = Decimal('0.00')
+        
+        if config.retefuente_porcentaje > 0:
+            retencion_fuente = subtotal * (Decimal(str(config.retefuente_porcentaje)) / Decimal('100'))
+        
+        if config.reteica_porcentaje > 0:
+            reteica = subtotal * (Decimal(str(config.reteica_porcentaje)) / Decimal('100'))
+        
+        # Calcular total general con retenciones
+        total_factura = subtotal + total_iva - retencion_fuente - reteica
         
         # Crear factura
         db_factura = Factura(
-            numero_factura=nuevo_numero,
+            numero_factura=numero_factura,
+            serie_factura=factura_data.serie_factura,
             id_cliente=factura_data.id_cliente,
-            fecha_factura=factura_data.fecha_factura or date.today(),
+            fecha_emision=factura_data.fecha_emision,
             fecha_vencimiento=factura_data.fecha_vencimiento,
             subtotal=float(subtotal),
-            impuestos=float(total_iva),
+            descuento_general=0.00,
+            subtotal_descuento=float(subtotal),
+            impuesto_iva=float(total_iva),
+            otros_impuestos=0.00,
+            retencion_fuente=float(retencion_fuente),
+            reteica=float(reteica),
             total=float(total_factura),
-            estado_factura=factura_data.estado_factura or 'EMITIDA',
-            aplica_iva=factura_data.aplica_iva,
+            estado_factura='EMITIDA',
             observaciones=factura_data.observaciones,
             metodo_pago=factura_data.metodo_pago,
-            usuario_creacion=usuario,
-            fecha_creacion=date.today()
+            usuario_creacion=factura_data.usuario_creacion
         )
         
         db.add(db_factura)
@@ -205,19 +220,21 @@ def crear_factura_completa(
         for detalle_calc in detalles_calculados:
             db_detalle = DetalleFactura(
                 id_factura=db_factura.id_factura,
+                numero_linea=detalle_calc['detalle_data'].numero_linea,
                 id_producto=detalle_calc['detalle_data'].id_producto,
                 cantidad=detalle_calc['detalle_data'].cantidad,
                 precio_unitario=float(detalle_calc['precio_unitario']),
-                subtotal=float(detalle_calc['subtotal_linea']),
-                impuestos=float(detalle_calc['iva_linea']),
+                descuento_linea=float(detalle_calc['detalle_data'].descuento_linea),
+                subtotal_linea=float(detalle_calc['subtotal_linea']),
+                impuesto_linea=float(detalle_calc['iva_linea']),
                 total_linea=float(detalle_calc['total_linea']),
                 descripcion_personalizada=detalle_calc['detalle_data'].descripcion_personalizada
             )
             db.add(db_detalle)
         
-        # Generar contabilidad automática si se solicita
-        if generar_contabilidad:
-            _generar_asientos_factura(db, db_factura, usuario)
+        # Incrementar número actual de factura en la configuración
+        if not factura_data.numero_factura:  # Solo si se generó automáticamente
+            config.numero_actual += 1
         
         db.commit()
         db.refresh(db_factura)
@@ -229,96 +246,6 @@ def crear_factura_completa(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al crear factura: {str(e)}"
         )
-
-def _generar_asientos_factura(db: Session, factura: Factura, usuario: str):
-    """Generar asientos contables automáticos para una factura"""
-    
-    # Obtener período contable activo
-    periodo = db.query(PeriodoContable).filter(
-        PeriodoContable.estado_periodo == 'ACTIVO'
-    ).first()
-    
-    if not periodo:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No hay período contable activo para generar asientos"
-        )
-    
-    # Obtener cuentas contables configuradas
-    cuenta_clientes = db.query(CatalogoCuentas).filter(
-        CatalogoCuentas.codigo_cuenta.like('1103%'),  # Cuentas por cobrar clientes
-        CatalogoCuentas.estado_cuenta == 'ACTIVA'
-    ).first()
-    
-    cuenta_ventas = db.query(CatalogoCuentas).filter(
-        CatalogoCuentas.codigo_cuenta.like('4101%'),  # Ventas
-        CatalogoCuentas.estado_cuenta == 'ACTIVA'
-    ).first()
-    
-    cuenta_iva_debito = db.query(CatalogoCuentas).filter(
-        CatalogoCuentas.codigo_cuenta.like('2104%'),  # IVA débito fiscal
-        CatalogoCuentas.estado_cuenta == 'ACTIVA'
-    ).first()
-    
-    if not cuenta_clientes or not cuenta_ventas:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Faltan configurar cuentas contables para facturación"
-        )
-    
-    # Crear transacción principal
-    descripcion_transaccion = f"Factura #{factura.numero_factura} - Cliente: {factura.cliente.nombre}"
-    
-    db_transaccion = Transaccion(
-        id_periodo=periodo.id_periodo,
-        fecha_transaccion=factura.fecha_factura,
-        descripcion=descripcion_transaccion,
-        referencia_externa=f"FAC-{factura.numero_factura}",
-        categoria='VENTAS',
-        estado_transaccion='CONFIRMADA',
-        usuario_creacion=usuario,
-        fecha_creacion=datetime.now()
-    )
-    
-    db.add(db_transaccion)
-    db.flush()
-    
-    # Asiento 1: Cargo a Cuentas por Cobrar (Debe)
-    asiento_cliente = Asiento(
-        id_transaccion=db_transaccion.id_transaccion,
-        id_cuenta=cuenta_clientes.id_cuenta,
-        debe=float(factura.total),
-        haber=0.00,
-        concepto=f"Factura #{factura.numero_factura}",
-        referencia_documento=f"FAC-{factura.numero_factura}",
-        usuario_creacion=usuario
-    )
-    db.add(asiento_cliente)
-    
-    # Asiento 2: Abono a Ventas (Haber)
-    asiento_ventas = Asiento(
-        id_transaccion=db_transaccion.id_transaccion,
-        id_cuenta=cuenta_ventas.id_cuenta,
-        debe=0.00,
-        haber=float(factura.subtotal),
-        concepto=f"Venta según factura #{factura.numero_factura}",
-        referencia_documento=f"FAC-{factura.numero_factura}",
-        usuario_creacion=usuario
-    )
-    db.add(asiento_ventas)
-    
-    # Asiento 3: Abono a IVA Débito Fiscal si aplica
-    if factura.aplica_iva and factura.impuestos > 0 and cuenta_iva_debito:
-        asiento_iva = Asiento(
-            id_transaccion=db_transaccion.id_transaccion,
-            id_cuenta=cuenta_iva_debito.id_cuenta,
-            debe=0.00,
-            haber=float(factura.impuestos),
-            concepto=f"IVA débito fiscal factura #{factura.numero_factura}",
-            referencia_documento=f"FAC-{factura.numero_factura}",
-            usuario_creacion=usuario
-        )
-        db.add(asiento_iva)
 
 def obtener_facturas_cliente(
     db: Session, 
@@ -334,19 +261,46 @@ def obtener_facturas_cliente(
     if estado:
         query = query.filter(Factura.estado_factura == estado)
     
-    return query.order_by(desc(Factura.fecha_factura)).limit(limit).offset(offset).all()
+    return query.order_by(desc(Factura.fecha_emision)).limit(limit).offset(offset).all()
+
+def buscar_facturas(
+    db: Session,
+    estado: str = None,
+    fecha_desde: date = None,
+    fecha_hasta: date = None,
+    numero_factura: str = None,
+    limit: int = 100,
+    offset: int = 0
+) -> List[Factura]:
+    """Buscar facturas con filtros opcionales"""
+    
+    query = db.query(Factura)
+    
+    if estado and estado != "Todas":
+        query = query.filter(Factura.estado_factura == estado.upper())
+    
+    if fecha_desde:
+        query = query.filter(Factura.fecha_emision >= fecha_desde)
+    
+    if fecha_hasta:
+        query = query.filter(Factura.fecha_emision <= fecha_hasta)
+    
+    if numero_factura:
+        query = query.filter(Factura.numero_factura.like(f"%{numero_factura}%"))
+    
+    return query.order_by(desc(Factura.fecha_emision)).limit(limit).offset(offset).all()
 
 def obtener_reporte_ventas_periodo(
     db: Session,
-    fecha_inicio: date,
-    fecha_fin: date,
+    fecha_desde: date,
+    fecha_hasta: date,
     cliente_id: int = None
 ) -> Dict:
     """Generar reporte de ventas por período"""
     
     query = db.query(Factura).filter(
-        Factura.fecha_factura >= fecha_inicio,
-        Factura.fecha_factura <= fecha_fin,
+        Factura.fecha_emision >= fecha_desde,
+        Factura.fecha_emision <= fecha_hasta,
         Factura.estado_factura.in_(['EMITIDA', 'PAGADA'])
     )
     
@@ -358,7 +312,7 @@ def obtener_reporte_ventas_periodo(
     # Calcular totales
     total_ventas = sum(f.total for f in facturas)
     total_subtotal = sum(f.subtotal for f in facturas)
-    total_impuestos = sum(f.impuestos or 0 for f in facturas)
+    total_impuestos = sum(f.impuesto_iva or 0 for f in facturas)
     cantidad_facturas = len(facturas)
     
     # Agrupar por cliente
@@ -377,11 +331,11 @@ def obtener_reporte_ventas_periodo(
         ventas_por_cliente[cliente_key]['cantidad_facturas'] += 1
         ventas_por_cliente[cliente_key]['total_ventas'] += factura.total
         ventas_por_cliente[cliente_key]['subtotal'] += factura.subtotal
-        ventas_por_cliente[cliente_key]['impuestos'] += factura.impuestos or 0
+        ventas_por_cliente[cliente_key]['impuestos'] += factura.impuesto_iva or 0
     
     # Productos más vendidos
     query_productos = db.query(
-        Producto.nombre_producto,
+        Producto.nombre,
         func.sum(DetalleFactura.cantidad).label('cantidad_vendida'),
         func.sum(DetalleFactura.total_linea).label('total_vendido')
     ).join(
@@ -389,18 +343,18 @@ def obtener_reporte_ventas_periodo(
     ).join(
         Factura, DetalleFactura.id_factura == Factura.id_factura
     ).filter(
-        Factura.fecha_factura >= fecha_inicio,
-        Factura.fecha_factura <= fecha_fin,
+        Factura.fecha_emision >= fecha_desde,
+        Factura.fecha_emision <= fecha_hasta,
         Factura.estado_factura.in_(['EMITIDA', 'PAGADA'])
     ).group_by(
-        Producto.id_producto, Producto.nombre_producto
+        Producto.id_producto, Producto.nombre
     ).order_by(
         desc(func.sum(DetalleFactura.cantidad))
     ).limit(10).all()
     
     productos_top = [
         {
-            'producto': p.nombre_producto,
+            'producto': p.nombre,
             'cantidad_vendida': float(p.cantidad_vendida),
             'total_vendido': float(p.total_vendido)
         }
@@ -409,8 +363,8 @@ def obtener_reporte_ventas_periodo(
     
     return {
         'periodo': {
-            'fecha_inicio': fecha_inicio,
-            'fecha_fin': fecha_fin
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
         },
         'resumen': {
             'cantidad_facturas': cantidad_facturas,
@@ -446,17 +400,6 @@ def anular_factura(db: Session, factura_id: int, motivo: str, usuario: str) -> F
         factura.fecha_modificacion = date.today()
         factura.usuario_modificacion = usuario
         
-        # Buscar y anular asientos relacionados
-        transacciones = db.query(Transaccion).filter(
-            Transaccion.referencia_externa == f"FAC-{factura.numero_factura}"
-        ).all()
-        
-        for transaccion in transacciones:
-            transaccion.estado_transaccion = 'ANULADA'
-            transaccion.observaciones = f"Anulada por anulación de factura #{factura.numero_factura}: {motivo}"
-            transaccion.fecha_modificacion = datetime.now()
-            transaccion.usuario_modificacion = usuario
-        
         db.commit()
         db.refresh(factura)
         return factura
@@ -476,7 +419,7 @@ def obtener_cuentas_por_cobrar(db: Session, fecha_corte: date = None) -> List[Di
     
     facturas_pendientes = db.query(Factura).filter(
         Factura.estado_factura.in_(['EMITIDA', 'VENCIDA']),
-        Factura.fecha_factura <= fecha_corte
+        Factura.fecha_emision <= fecha_corte
     ).order_by(Factura.fecha_vencimiento).all()
     
     cuentas_por_cobrar = []
@@ -506,7 +449,7 @@ def obtener_cuentas_por_cobrar(db: Session, fecha_corte: date = None) -> List[Di
                 'nombre': factura.cliente.nombre,
                 'nit': factura.cliente.nit or factura.cliente.dui
             },
-            'fecha_factura': factura.fecha_factura,
+            'fecha_factura': factura.fecha_emision,
             'fecha_vencimiento': factura.fecha_vencimiento,
             'total': float(factura.total),
             'dias_vencimiento': dias_vencimiento,
@@ -541,3 +484,292 @@ def _resumir_por_estado_cobranza(cuentas: List[Dict]) -> Dict:
         resumen[estado]['total'] += cuenta['total']
     
     return resumen
+
+def obtener_reporte_ventas_por_cliente(
+    db: Session,
+    fecha_desde: date,
+    fecha_hasta: date
+) -> Dict:
+    """Generar reporte de ventas agrupado por cliente"""
+    
+    facturas = db.query(Factura).filter(
+        Factura.fecha_emision >= fecha_desde,
+        Factura.fecha_emision <= fecha_hasta,
+        Factura.estado_factura.in_(['EMITIDA', 'PAGADA'])
+    ).all()
+    
+    ventas_por_cliente = {}
+    
+    for factura in facturas:
+        cliente_id = factura.id_cliente
+        if cliente_id not in ventas_por_cliente:
+            ventas_por_cliente[cliente_id] = {
+                'id_cliente': cliente_id,
+                'codigo_cliente': factura.cliente.codigo_cliente,
+                'nombre': factura.cliente.nombre,
+                'nit': factura.cliente.nit or factura.cliente.dui,
+                'cantidad_facturas': 0,
+                'total_ventas': 0,
+                'subtotal': 0,
+                'impuestos': 0
+            }
+        
+        ventas_por_cliente[cliente_id]['cantidad_facturas'] += 1
+        ventas_por_cliente[cliente_id]['total_ventas'] += float(factura.total)
+        ventas_por_cliente[cliente_id]['subtotal'] += float(factura.subtotal)
+        ventas_por_cliente[cliente_id]['impuestos'] += float(factura.impuesto_iva or 0)
+    
+    # Convertir a lista y ordenar por total de ventas
+    lista_clientes = sorted(
+        ventas_por_cliente.values(),
+        key=lambda x: x['total_ventas'],
+        reverse=True
+    )
+    
+    total_general = sum(c['total_ventas'] for c in lista_clientes)
+    
+    return {
+        'periodo': {
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
+        },
+        'resumen': {
+            'total_clientes': len(lista_clientes),
+            'total_ventas': total_general,
+            'promedio_por_cliente': total_general / len(lista_clientes) if lista_clientes else 0
+        },
+        'detalle_clientes': lista_clientes
+    }
+
+def obtener_reporte_ventas_por_producto(
+    db: Session,
+    fecha_desde: date,
+    fecha_hasta: date
+) -> Dict:
+    """Generar reporte de ventas agrupado por producto"""
+    
+    query = db.query(
+        Producto.id_producto,
+        Producto.codigo_producto,
+        Producto.nombre,
+        Producto.precio_venta,
+        func.sum(DetalleFactura.cantidad).label('cantidad_vendida'),
+        func.sum(DetalleFactura.subtotal_linea).label('subtotal'),
+        func.sum(DetalleFactura.impuesto_linea).label('impuestos'),
+        func.sum(DetalleFactura.total_linea).label('total_vendido')
+    ).join(
+        DetalleFactura, Producto.id_producto == DetalleFactura.id_producto
+    ).join(
+        Factura, DetalleFactura.id_factura == Factura.id_factura
+    ).filter(
+        Factura.fecha_emision >= fecha_desde,
+        Factura.fecha_emision <= fecha_hasta,
+        Factura.estado_factura.in_(['EMITIDA', 'PAGADA'])
+    ).group_by(
+        Producto.id_producto,
+        Producto.codigo_producto,
+        Producto.nombre,
+        Producto.precio_venta
+    ).order_by(
+        desc(func.sum(DetalleFactura.total_linea))
+    ).all()
+    
+    productos = []
+    total_general = 0
+    cantidad_total = 0
+    
+    for p in query:
+        total_vendido = float(p.total_vendido)
+        cantidad = float(p.cantidad_vendida)
+        
+        productos.append({
+            'id_producto': p.id_producto,
+            'codigo_producto': p.codigo_producto,
+            'nombre': p.nombre,
+            'precio_venta': float(p.precio_venta),
+            'cantidad_vendida': cantidad,
+            'subtotal': float(p.subtotal),
+            'impuestos': float(p.impuestos or 0),
+            'total_vendido': total_vendido,
+            'precio_promedio': total_vendido / cantidad if cantidad > 0 else 0
+        })
+        
+        total_general += total_vendido
+        cantidad_total += cantidad
+    
+    return {
+        'periodo': {
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
+        },
+        'resumen': {
+            'total_productos': len(productos),
+            'cantidad_total_vendida': cantidad_total,
+            'total_ventas': total_general,
+            'ticket_promedio': total_general / cantidad_total if cantidad_total > 0 else 0
+        },
+        'detalle_productos': productos
+    }
+
+def obtener_reporte_tendencias(
+    db: Session,
+    fecha_desde: date,
+    fecha_hasta: date
+) -> Dict:
+    """Generar reporte de tendencias de ventas (diario, semanal, mensual)"""
+    
+    # Ventas por día
+    query_diaria = db.query(
+        Factura.fecha_emision,
+        func.count(Factura.id_factura).label('cantidad_facturas'),
+        func.sum(Factura.subtotal).label('subtotal'),
+        func.sum(Factura.impuesto_iva).label('impuestos'),
+        func.sum(Factura.total).label('total')
+    ).filter(
+        Factura.fecha_emision >= fecha_desde,
+        Factura.fecha_emision <= fecha_hasta,
+        Factura.estado_factura.in_(['EMITIDA', 'PAGADA'])
+    ).group_by(
+        Factura.fecha_emision
+    ).order_by(
+        Factura.fecha_emision
+    ).all()
+    
+    ventas_diarias = []
+    for v in query_diaria:
+        ventas_diarias.append({
+            'fecha': v.fecha_emision.isoformat(),
+            'cantidad_facturas': v.cantidad_facturas,
+            'subtotal': float(v.subtotal),
+            'impuestos': float(v.impuestos or 0),
+            'total': float(v.total)
+        })
+    
+    # Calcular tendencia
+    total_ventas = sum(v['total'] for v in ventas_diarias)
+    total_facturas = sum(v['cantidad_facturas'] for v in ventas_diarias)
+    dias_con_ventas = len(ventas_diarias)
+    
+    # Mejor día y peor día
+    mejor_dia = max(ventas_diarias, key=lambda x: x['total']) if ventas_diarias else None
+    peor_dia = min(ventas_diarias, key=lambda x: x['total']) if ventas_diarias else None
+    
+    return {
+        'periodo': {
+            'fecha_desde': fecha_desde,
+            'fecha_hasta': fecha_hasta
+        },
+        'resumen': {
+            'total_ventas': total_ventas,
+            'total_facturas': total_facturas,
+            'dias_con_ventas': dias_con_ventas,
+            'promedio_diario': total_ventas / dias_con_ventas if dias_con_ventas > 0 else 0,
+            'promedio_por_factura': total_ventas / total_facturas if total_facturas > 0 else 0
+        },
+        'mejor_dia': mejor_dia,
+        'peor_dia': peor_dia,
+        'ventas_diarias': ventas_diarias
+    }
+
+def obtener_configuracion_facturacion(db: Session) -> ConfiguracionFacturacion:
+    """Obtener configuración activa de facturación"""
+    
+    config = db.query(ConfiguracionFacturacion).filter(
+        ConfiguracionFacturacion.activo == True
+    ).first()
+    
+    if not config:
+        # Si no existe configuración, crear una por defecto
+        config = ConfiguracionFacturacion(
+            empresa_nit="000000000-0",
+            empresa_nombre="Empresa sin configurar",
+            empresa_direccion="Dirección sin configurar",
+            empresa_telefono="0000-0000",
+            empresa_email="sin-email@empresa.com",
+            empresa_web="",
+            iva_porcentaje=Decimal('13.00'),
+            retefuente_porcentaje=Decimal('0.00'),
+            reteica_porcentaje=Decimal('0.00'),
+            prefijo_factura='FV',
+            numero_inicial=1,
+            numero_actual=1,
+            activo=True,
+            usuario_actualizacion='SISTEMA'
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    
+    return config
+
+def crear_configuracion_facturacion(
+    db: Session,
+    config_data: ConfiguracionFacturacionCreate
+) -> ConfiguracionFacturacion:
+    """Crear nueva configuración de facturación"""
+    
+    # Verificar si ya existe una configuración activa
+    config_existente = db.query(ConfiguracionFacturacion).filter(
+        ConfiguracionFacturacion.activo == True
+    ).first()
+    
+    if config_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ya existe una configuración activa. Use actualizar en su lugar."
+        )
+    
+    try:
+        config_dict = config_data.dict()
+        db_config = ConfiguracionFacturacion(**config_dict, activo=True)
+        
+        db.add(db_config)
+        db.commit()
+        db.refresh(db_config)
+        
+        return db_config
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al crear configuración: {str(e)}"
+        )
+
+def actualizar_configuracion_facturacion(
+    db: Session,
+    config_data: ConfiguracionFacturacionUpdate
+) -> ConfiguracionFacturacion:
+    """Actualizar configuración activa de facturación"""
+    
+    config = db.query(ConfiguracionFacturacion).filter(
+        ConfiguracionFacturacion.activo == True
+    ).first()
+    
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No existe configuración activa"
+        )
+    
+    try:
+        # Actualizar solo los campos proporcionados
+        update_data = config_data.dict(exclude_unset=True)
+        
+        for field, value in update_data.items():
+            if hasattr(config, field) and value is not None:
+                setattr(config, field, value)
+        
+        config.fecha_actualizacion = datetime.now()
+        
+        db.commit()
+        db.refresh(config)
+        
+        return config
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al actualizar configuración: {str(e)}"
+        )
