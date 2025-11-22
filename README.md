@@ -75,6 +75,65 @@ docker-compose up --build
 docker-compose up -d --build
 ```
 
+## 🔄 Migraciones de Base de Datos
+
+### ⚠️ Importante: Después de hacer `git pull`
+
+Si tu compañero o cualquier desarrollador hace `git pull` y obtiene **error 500 en crear factura** o en cualquier módulo, es porque faltan columnas en la base de datos.
+
+### Migración de Retenciones Fiscales (22/11/2024)
+
+Ejecuta este comando para agregar las columnas de retenciones:
+
+```bash
+docker exec -it sistema_contable_db psql -U postgres -d zapateria -c "
+ALTER TABLE facturas 
+ADD COLUMN IF NOT EXISTS retencion_fuente NUMERIC(15,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS reteica NUMERIC(15,2) DEFAULT 0.00;
+"
+```
+
+### Verificar Base de Datos Actualizada
+
+```bash
+# Verificar que las columnas existan
+docker exec -it sistema_contable_db psql -U postgres -d zapateria -c "\d facturas"
+```
+
+### Script Completo de Actualización
+
+Si tu compañero tiene problemas, que ejecute estos comandos en orden:
+
+```bash
+# 1. Hacer pull de los cambios
+git pull origin main
+
+# 2. Agregar columnas faltantes (si aplica)
+docker exec -it sistema_contable_db psql -U postgres -d zapateria -c "
+ALTER TABLE facturas 
+ADD COLUMN IF NOT EXISTS retencion_fuente NUMERIC(15,2) DEFAULT 0.00,
+ADD COLUMN IF NOT EXISTS reteica NUMERIC(15,2) DEFAULT 0.00;
+"
+
+# 3. Reconstruir contenedores con código actualizado
+docker-compose up -d --build
+
+# 4. Verificar que todo funcione
+curl http://localhost:8000/health
+```
+
+### 📋 Historial de Migraciones
+
+| Fecha | Descripción | Comando |
+|-------|-------------|---------|
+| 22/11/2024 | Agregar retenciones fiscales | `ALTER TABLE facturas ADD COLUMN retencion_fuente, reteica` |
+
+## 💡 Notas para el Equipo
+
+- **Siempre ejecuta migraciones** después de hacer `git pull`
+- **Revisa esta sección** si obtienes errores 500 inesperados
+- **Documenta nuevas migraciones** en la tabla de arriba cuando agregues cambios al esquema
+
 ### 4. Verificar servicios
 
 Espera a que todos los contenedores estén saludables:
