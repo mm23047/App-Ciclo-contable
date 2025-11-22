@@ -54,23 +54,18 @@ def registrar_producto(backend_url: str):
             
             tipo_producto = st.selectbox(
                 "Tipo*:",
-                ["Producto", "Servicio"],
+                ["PRODUCTO", "SERVICIO", "COMBO"],
                 help="Clasificación como producto físico o servicio"
             )
             
-            categoria = st.text_input(
+            categoria_producto = st.text_input(
                 "Categoría:",
                 help="Categoría o familia del producto"
             )
             
-            marca = st.text_input(
-                "Marca:",
-                help="Marca del producto"
-            )
-            
             unidad_medida = st.selectbox(
                 "Unidad de Medida:",
-                ["Unidad", "Kilogramo", "Metro", "Litro", "Caja", "Paquete", "Docena", "Par", "Hora", "Servicio"],
+                ["UNIDAD", "KG", "METRO", "LITRO", "CAJA", "PAQUETE", "DOCENA", "PAR", "HORA", "SERVICIO"],
                 help="Unidad de medida para ventas"
             )
         
@@ -84,45 +79,38 @@ def registrar_producto(backend_url: str):
                 help="Precio de venta al público"
             )
             
-            precio_costo = st.number_input(
-                "Precio de Costo:",
+            precio_compra = st.number_input(
+                "Precio de Compra:",
                 min_value=0.0,
                 step=0.01,
                 help="Costo de adquisición o producción"
             )
             
-            iva_porcentaje = st.selectbox(
+            margen_utilidad = st.number_input(
+                "Margen de Utilidad (%):",
+                min_value=0.0,
+                value=0.0,
+                step=0.1,
+                help="Margen de utilidad del producto"
+            )
+            
+            aplica_iva = st.checkbox(
+                "Aplica IVA",
+                value=True,
+                help="Indica si el producto tiene IVA"
+            )
+            
+            porcentaje_iva = st.selectbox(
                 "IVA (%):",
-                [0, 5, 19],
+                [0, 5, 13, 19],
                 index=2,
                 help="Porcentaje de IVA aplicable"
             )
-            
-            descuento_maximo = st.number_input(
-                "Descuento Máximo (%):",
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=0.1,
-                help="Descuento máximo autorizado"
-            )
-            
-            precio_mayorista = st.number_input(
-                "Precio Mayorista:",
-                min_value=0.0,
-                step=0.01,
-                help="Precio para ventas mayoristas"
-            )
-            
-            precio_minimo = st.number_input(
-                "Precio Mínimo:",
-                min_value=0.0,
-                step=0.01,
-                help="Precio mínimo de venta permitido"
-            )
         
         # Información de inventario (solo para productos)
-        if st.selectbox("¿Maneja inventario?", ["No", "Sí"], key="maneja_inventario") == "Sí":
+        maneja_inventario = st.selectbox("¿Maneja inventario?", ["No", "Sí"], key="maneja_inventario") == "Sí"
+        
+        if maneja_inventario:
             st.markdown("#### 📦 Control de Inventario")
             
             col1, col2, col3 = st.columns(3)
@@ -157,76 +145,27 @@ def registrar_producto(backend_url: str):
             stock_minimo = None
             stock_maximo = None
         
-        # Información adicional
-        st.markdown("#### 📄 Información Adicional")
+        # Estados y configuraciones
+        st.markdown("#### ⚙️ Estados y Configuración")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            descripcion = st.text_area(
-                "Descripción:",
-                height=100,
-                help="Descripción detallada del producto/servicio"
-            )
-            
-            codigo_barras = st.text_input(
-                "Código de Barras:",
-                help="Código de barras del producto"
-            )
-            
-            referencia_proveedor = st.text_input(
-                "Referencia Proveedor:",
-                help="Referencia del proveedor"
-            )
-        
-        with col2:
-            peso = st.number_input(
-                "Peso (kg):",
-                min_value=0.0,
-                step=0.01,
-                help="Peso del producto en kilogramos"
-            )
-            
-            dimensiones = st.text_input(
-                "Dimensiones:",
-                help="Dimensiones del producto (LxAxH)"
-            )
-            
-            garantia_dias = st.number_input(
-                "Garantía (días):",
-                min_value=0,
-                value=0,
-                step=1,
-                help="Días de garantía del producto"
-            )
-        
-        # Estados y configuraciones
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            activo = st.checkbox(
-                "Producto Activo",
-                value=True,
+            estado_producto = st.selectbox(
+                "Estado:",
+                ["ACTIVO", "INACTIVO", "DESCONTINUADO"],
                 help="Estado del producto en el sistema"
             )
         
         with col2:
-            disponible_web = st.checkbox(
-                "Disponible en Web",
-                value=False,
-                help="Mostrar en tienda virtual"
+            codigo_impuesto = st.text_input(
+                "Código de Impuesto:",
+                help="Código de impuesto para reportes"
             )
         
-        with col3:
-            requiere_autorizacion = st.checkbox(
-                "Requiere Autorización",
-                value=False,
-                help="Requiere autorización para vender"
-            )
-        
-        observaciones = st.text_area(
-            "Observaciones:",
-            help="Observaciones adicionales del producto"
+        descripcion = st.text_area(
+            "Descripción:",
+            help="Descripción detallada del producto"
         )
         
         # Botón de envío
@@ -245,29 +184,21 @@ def registrar_producto(backend_url: str):
                     {
                         "codigo_producto": codigo_producto,
                         "nombre": nombre,
-                        "descripcion": descripcion,
+                        "descripcion": descripcion if descripcion else None,
                         "tipo_producto": tipo_producto,
-                        "categoria": categoria,
-                        "marca": marca,
+                        "categoria_producto": categoria_producto if categoria_producto else None,
                         "unidad_medida": unidad_medida,
                         "precio_venta": precio_venta,
-                        "precio_costo": precio_costo,
-                        "iva_porcentaje": iva_porcentaje,
-                        "descuento_maximo": descuento_maximo,
-                        "precio_mayorista": precio_mayorista,
-                        "precio_minimo": precio_minimo,
-                        "stock_actual": stock_actual,
-                        "stock_minimo": stock_minimo,
-                        "stock_maximo": stock_maximo,
-                        "codigo_barras": codigo_barras,
-                        "referencia_proveedor": referencia_proveedor,
-                        "peso": peso,
-                        "dimensiones": dimensiones,
-                        "garantia_dias": garantia_dias,
-                        "activo": activo,
-                        "disponible_web": disponible_web,
-                        "requiere_autorizacion": requiere_autorizacion,
-                        "observaciones": observaciones
+                        "precio_compra": precio_compra,
+                        "margen_utilidad": margen_utilidad,
+                        "aplica_iva": aplica_iva,
+                        "porcentaje_iva": float(porcentaje_iva),
+                        "codigo_impuesto": codigo_impuesto if codigo_impuesto else None,
+                        "maneja_inventario": maneja_inventario,
+                        "stock_actual": float(stock_actual) if stock_actual is not None else 0.0,
+                        "stock_minimo": float(stock_minimo) if stock_minimo is not None else 0.0,
+                        "stock_maximo": float(stock_maximo) if stock_maximo is not None else 0.0,
+                        "estado_producto": estado_producto
                     }
                 )
 
@@ -275,14 +206,11 @@ def crear_producto_completo(backend_url: str, datos_producto: Dict[str, Any]):
     """Crear producto con datos completos"""
     
     try:
-        # Limpiar datos vacíos
+        # Limpiar datos vacíos (excepto False y 0 que son válidos)
         datos_limpios = {
             k: v for k, v in datos_producto.items() 
-            if v is not None and v != "" and v != 0.0
+            if v is not None and v != ""
         }
-        
-        # Asegurar que precio esté presente
-        datos_limpios["precio"] = datos_producto["precio_venta"]
         
         with st.spinner("Registrando producto..."):
             response = requests.post(f"{backend_url}/api/productos", json=datos_limpios)
@@ -298,16 +226,16 @@ def crear_producto_completo(backend_url: str, datos_producto: Dict[str, Any]):
                 
                 with col1:
                     st.write(f"**ID:** {producto_creado.get('id_producto', 'N/A')}")
-                    st.write(f"**Código:** {datos_producto['codigo_producto']}")
-                    st.write(f"**Nombre:** {datos_producto['nombre']}")
-                    st.write(f"**Tipo:** {datos_producto['tipo_producto']}")
-                    st.write(f"**Categoría:** {datos_producto.get('categoria', 'N/A')}")
+                    st.write(f"**Código:** {producto_creado.get('codigo_producto')}")
+                    st.write(f"**Nombre:** {producto_creado.get('nombre')}")
+                    st.write(f"**Tipo:** {producto_creado.get('tipo_producto')}")
                 
                 with col2:
-                    st.write(f"**Precio Venta:** ${datos_producto['precio_venta']:,.2f}")
-                    st.write(f"**IVA:** {datos_producto.get('iva_porcentaje', 0)}%")
-                    st.write(f"**Unidad:** {datos_producto.get('unidad_medida', 'N/A')}")
-                    st.write(f"**Estado:** {'Activo' if datos_producto.get('activo') else 'Inactivo'}")
+                    precio_v = float(producto_creado.get('precio_venta', 0))
+                    iva_p = float(producto_creado.get('porcentaje_iva', 0))
+                    st.write(f"**Precio Venta:** ${precio_v:,.2f}")
+                    st.write(f"**IVA:** {iva_p}%")
+                    st.write(f"**Estado:** {producto_creado.get('estado_producto')}")
             
         else:
             error_detail = response.json().get('detail', 'Error desconocido')
@@ -335,7 +263,7 @@ def lista_productos(backend_url: str):
     with col2:
         filtro_tipo = st.selectbox(
             "Tipo:",
-            ["Todos", "Producto", "Servicio"]
+            ["Todos", "PRODUCTO", "SERVICIO", "COMBO"]
         )
     
     with col3:
@@ -379,9 +307,18 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
     
     # Métricas resumen
     total_productos = len(productos)
-    productos_activos = len([p for p in productos if p.get('activo', True)])
-    productos_servicios = len([p for p in productos if p.get('tipo_producto') == 'Servicio'])
-    valor_inventario = sum(p.get('precio_venta', 0) * p.get('stock_actual', 0) for p in productos)
+    productos_activos = len([p for p in productos if p.get('estado_producto') == 'ACTIVO'])
+    productos_servicios = len([p for p in productos if p.get('tipo_producto') == 'SERVICIO'])
+    
+    # Calcular valor de inventario con conversión segura de tipos
+    valor_inventario = 0
+    for p in productos:
+        try:
+            precio = float(p.get('precio_venta', 0))
+            stock = float(p.get('stock_actual', 0))
+            valor_inventario += precio * stock
+        except (ValueError, TypeError):
+            continue
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -405,14 +342,22 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
         # Formatear columnas
         df_display = df_productos.copy()
         
-        # Formatear precios
+        # Formatear precios con conversión segura a float
         if 'precio_venta' in df_display.columns:
-            df_display['precio_venta_fmt'] = df_display['precio_venta'].apply(lambda x: f"${x:,.2f}")
+            df_display['precio_venta_fmt'] = df_display['precio_venta'].apply(
+                lambda x: f"${float(x):,.2f}" if x is not None else "$0.00"
+            )
         elif 'precio' in df_display.columns:
-            df_display['precio_fmt'] = df_display['precio'].apply(lambda x: f"${x:,.2f}")
+            df_display['precio_fmt'] = df_display['precio'].apply(
+                lambda x: f"${float(x):,.2f}" if x is not None else "$0.00"
+            )
         
-        # Estado como emoji
-        if 'activo' in df_display.columns:
+        # Estado como emoji - usar estado_producto en lugar de activo
+        if 'estado_producto' in df_display.columns:
+            df_display['estado_emoji'] = df_display['estado_producto'].apply(
+                lambda x: "🟢 Activo" if x == "ACTIVO" else "🔴 Inactivo"
+            )
+        elif 'activo' in df_display.columns:
             df_display['estado_emoji'] = df_display['activo'].apply(
                 lambda x: "🟢 Activo" if x else "🔴 Inactivo"
             )
@@ -420,11 +365,14 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
         # Stock con alertas
         if 'stock_actual' in df_display.columns and 'stock_minimo' in df_display.columns:
             def formato_stock(row):
-                stock = row.get('stock_actual', 0)
-                minimo = row.get('stock_minimo', 0)
-                if stock <= minimo and minimo > 0:
-                    return f"⚠️ {stock}"
-                return str(stock)
+                try:
+                    stock = float(row.get('stock_actual', 0))
+                    minimo = float(row.get('stock_minimo', 0))
+                    if stock <= minimo and minimo > 0:
+                        return f"⚠️ {stock:.0f}"
+                    return f"{stock:.0f}"
+                except (ValueError, TypeError):
+                    return "0"
             
             df_display['stock_fmt'] = df_display.apply(formato_stock, axis=1)
         
@@ -468,149 +416,407 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
                 producto_idx = event.selection.rows[0]
                 producto_seleccionado = productos[producto_idx]
                 
+                st.markdown("---")
                 st.markdown("### 🔧 Acciones sobre Producto Seleccionado")
                 
+                # Botones de acción
                 col1, col2, col3, col4, col5 = st.columns(5)
                 
+                ver_detalles = False
+                editar = False
+                actualizar_precio = False
+                
                 with col1:
-                    if st.button("👁️ Ver Detalles", use_container_width=True):
-                        mostrar_detalle_producto(producto_seleccionado)
+                    if st.button("👁️ Ver Detalles", use_container_width=True, key="btn_ver_detalles"):
+                        ver_detalles = True
                 
                 with col2:
-                    if st.button("✏️ Editar", use_container_width=True):
-                        editar_producto(backend_url, producto_seleccionado)
+                    if st.button("✏️ Editar", use_container_width=True, key="btn_editar"):
+                        editar = True
                 
                 with col3:
-                    if st.button("💰 Actualizar Precio", use_container_width=True):
-                        actualizar_precio_producto(backend_url, producto_seleccionado)
+                    if st.button("💰 Actualizar Precio", use_container_width=True, key="btn_actualizar_precio"):
+                        actualizar_precio = True
                 
                 with col4:
-                    estado_actual = producto_seleccionado.get('activo', True)
-                    accion_estado = "Desactivar" if estado_actual else "Activar"
-                    if st.button(f"🔄 {accion_estado}", use_container_width=True):
-                        cambiar_estado_producto(backend_url, producto_seleccionado['id_producto'], not estado_actual)
+                    estado_actual = producto_seleccionado.get('estado_producto', 'ACTIVO')
+                    if estado_actual == 'ACTIVO':
+                        nuevo_estado = 'INACTIVO'
+                        accion_estado = "🔴 Desactivar"
+                    else:
+                        nuevo_estado = 'ACTIVO'
+                        accion_estado = "🟢 Activar"
+                    
+                    if st.button(accion_estado, use_container_width=True, key="btn_cambiar_estado"):
+                        cambiar_estado_producto(backend_url, producto_seleccionado['id_producto'], nuevo_estado)
                 
                 with col5:
-                    if st.button("🗑️ Eliminar", use_container_width=True):
+                    if st.button("🗑️ Eliminar", use_container_width=True, key="btn_eliminar"):
                         if st.checkbox("Confirmar eliminación", key=f"confirm_del_prod_{producto_seleccionado['id_producto']}"):
                             eliminar_producto(backend_url, producto_seleccionado['id_producto'])
+                
+                # Mostrar vistas en contenedor de ancho completo
+                st.markdown("---")
+                
+                if ver_detalles:
+                    with st.container():
+                        mostrar_detalle_producto(producto_seleccionado)
+                
+                if editar:
+                    with st.container():
+                        editar_producto(backend_url, producto_seleccionado)
+                
+                if actualizar_precio:
+                    with st.container():
+                        actualizar_precio_producto(backend_url, producto_seleccionado)
 
 def mostrar_detalle_producto(producto: Dict[str, Any]):
     """Mostrar detalle completo de un producto"""
     
-    with st.expander(f"📦 Detalle del Producto: {producto.get('nombre', 'N/A')}", expanded=True):
-        col1, col2, col3 = st.columns(3)
+    # Encabezado destacado
+    st.markdown(f"## 📦 {producto.get('nombre', 'N/A')}")
+    st.caption(f"Código: {producto.get('codigo_producto', 'N/A')}")
+    
+    st.markdown("---")
+    
+    # Información principal en tarjetas con mejor espaciado
+    col1, col2 = st.columns(2, gap="large")
+    
+    with col1:
+        with st.container():
+            st.markdown("### 📋 Información Básica")
+            st.markdown("")
+            
+            # Usar tabla para mejor visualización
+            info_data = {
+                "Campo": ["Tipo", "Categoría", "Unidad de Medida"],
+                "Valor": [
+                    producto.get('tipo_producto', 'N/A'),
+                    producto.get('categoria_producto', producto.get('categoria', 'N/A')),
+                    producto.get('unidad_medida', 'N/A')
+                ]
+            }
+            st.table(pd.DataFrame(info_data))
+            
+            if producto.get('descripcion'):
+                st.markdown("")
+                st.markdown("**📝 Descripción:**")
+                st.info(producto['descripcion'])
+    
+    with col2:
+        with st.container():
+            st.markdown("### 💰 Información Comercial")
+            st.markdown("")
+            
+            # Convertir precios a float de manera segura
+            try:
+                precio_venta = float(producto.get('precio_venta', 0))
+                precio_compra = float(producto.get('precio_compra', producto.get('precio_costo', 0)))
+                porcentaje_iva = float(producto.get('porcentaje_iva', producto.get('iva_porcentaje', 0)))
+            except (ValueError, TypeError):
+                precio_venta = 0.0
+                precio_compra = 0.0
+                porcentaje_iva = 0.0
+            
+            # Calcular margen
+            if precio_compra > 0:
+                margen = ((precio_venta - precio_compra) / precio_compra) * 100
+            else:
+                margen = 0
+            
+            # Métricas grandes y visibles
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric("💵 Precio Venta", f"${precio_venta:,.2f}")
+                st.metric("📈 Margen", f"{margen:.1f}%")
+            
+            with col_b:
+                st.metric("💳 Precio Compra", f"${precio_compra:,.2f}")
+                st.metric("📊 IVA", f"{porcentaje_iva:.0f}%")
+            
+            # Estado con color
+            estado = producto.get('estado_producto', 'N/A')
+            if estado == 'ACTIVO':
+                st.success(f"✅ Estado: {estado}")
+            elif estado == 'INACTIVO':
+                st.error(f"❌ Estado: {estado}")
+            else:
+                st.warning(f"⚠️ Estado: {estado}")
+    
+    # Información de inventario si existe
+    if producto.get('stock_actual') is not None or producto.get('maneja_inventario'):
+        st.markdown("")
+        st.markdown("---")
+        st.markdown("### 📦 Control de Inventario")
+        st.markdown("")
+        
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown("**📋 Información Básica:**")
-            st.text(f"Código: {producto.get('codigo_producto', 'N/A')}")
-            st.text(f"Nombre: {producto.get('nombre', 'N/A')}")
-            st.text(f"Tipo: {producto.get('tipo_producto', 'N/A')}")
-            st.text(f"Categoría: {producto.get('categoria', 'N/A')}")
-            st.text(f"Marca: {producto.get('marca', 'N/A')}")
-            st.text(f"Unidad: {producto.get('unidad_medida', 'N/A')}")
+            stock_actual = float(producto.get('stock_actual', 0))
+            st.metric("📦 Stock Actual", f"{stock_actual:.0f} unidades")
         
         with col2:
-            st.markdown("**💰 Información Comercial:**")
-            precio_venta = producto.get('precio_venta') or producto.get('precio', 0)
-            st.text(f"Precio Venta: ${precio_venta:,.2f}")
-            st.text(f"Precio Costo: ${producto.get('precio_costo', 0):,.2f}")
-            st.text(f"IVA: {producto.get('iva_porcentaje', 0)}%")
-            st.text(f"Desc. Máx.: {producto.get('descuento_maximo', 0):.1f}%")
-            st.text(f"Precio Mayorista: ${producto.get('precio_mayorista', 0):,.2f}")
-            st.text(f"Estado: {'Activo' if producto.get('activo') else 'Inactivo'}")
+            stock_minimo = float(producto.get('stock_minimo', 0))
+            st.metric("⚠️ Stock Mínimo", f"{stock_minimo:.0f} unidades")
         
         with col3:
-            st.markdown("**📦 Inventario:**")
-            st.text(f"Stock Actual: {producto.get('stock_actual', 'N/A')}")
-            st.text(f"Stock Mínimo: {producto.get('stock_minimo', 'N/A')}")
-            st.text(f"Stock Máximo: {producto.get('stock_maximo', 'N/A')}")
-            st.text(f"Código Barras: {producto.get('codigo_barras', 'N/A')}")
-            st.text(f"Peso: {producto.get('peso', 0)} kg")
-            st.text(f"Garantía: {producto.get('garantia_dias', 0)} días")
+            stock_maximo = float(producto.get('stock_maximo', 0))
+            st.metric("📈 Stock Máximo", f"{stock_maximo:.0f} unidades")
         
-        if producto.get('descripcion'):
-            st.markdown("**📝 Descripción:**")
-            st.text(producto['descripcion'])
-        
-        if producto.get('observaciones'):
-            st.markdown("**📄 Observaciones:**")
-            st.text(producto['observaciones'])
+        with col4:
+            if stock_actual > 0 and precio_venta > 0:
+                valor_inventario = stock_actual * precio_venta
+                st.metric("💰 Valor Inventario", f"${valor_inventario:,.2f}")
 
 def editar_producto(backend_url: str, producto: Dict[str, Any]):
     """Formulario para editar producto"""
     
-    st.markdown(f"### ✏️ Editar Producto: {producto.get('nombre', 'N/A')}")
+    st.markdown(f"## ✏️ Editar Producto")
+    st.markdown(f"### {producto.get('nombre', 'N/A')}")
+    st.caption(f"Código: {producto.get('codigo_producto', 'N/A')}")
+    st.markdown("---")
     
-    with st.form(f"form_editar_producto_{producto['id_producto']}"):
-        col1, col2 = st.columns(2)
+    with st.form(f"form_editar_producto_{producto['id_producto']}", clear_on_submit=False):
+        col1, col2 = st.columns(2, gap="large")
         
         with col1:
-            nombre = st.text_input("Nombre:", value=producto.get('nombre', ''))
-            descripcion = st.text_area("Descripción:", value=producto.get('descripcion', ''))
-            categoria = st.text_input("Categoría:", value=producto.get('categoria', ''))
-            marca = st.text_input("Marca:", value=producto.get('marca', ''))
+            st.markdown("#### 📋 Información Básica")
+            
+            codigo_producto = st.text_input(
+                "Código Producto:",
+                value=producto.get('codigo_producto', ''),
+                disabled=True,
+                help="El código no se puede modificar"
+            )
+            
+            nombre = st.text_input(
+                "Nombre*:",
+                value=producto.get('nombre', ''),
+                help="Nombre del producto o servicio"
+            )
+            
+            tipo_producto = st.selectbox(
+                "Tipo:",
+                ["PRODUCTO", "SERVICIO", "COMBO"],
+                index=["PRODUCTO", "SERVICIO", "COMBO"].index(producto.get('tipo_producto', 'PRODUCTO')) if producto.get('tipo_producto') in ["PRODUCTO", "SERVICIO", "COMBO"] else 0,
+                help="Tipo de producto"
+            )
+            
+            categoria_producto = st.text_input(
+                "Categoría:",
+                value=producto.get('categoria_producto', ''),
+                help="Categoría del producto"
+            )
+            
+            unidad_medida = st.selectbox(
+                "Unidad de Medida:",
+                ["UNIDAD", "KG", "METRO", "LITRO", "CAJA", "PAQUETE", "DOCENA", "PAR", "HORA", "SERVICIO"],
+                index=["UNIDAD", "KG", "METRO", "LITRO", "CAJA", "PAQUETE", "DOCENA", "PAR", "HORA", "SERVICIO"].index(producto.get('unidad_medida', 'UNIDAD')) if producto.get('unidad_medida') in ["UNIDAD", "KG", "METRO", "LITRO", "CAJA", "PAQUETE", "DOCENA", "PAR", "HORA", "SERVICIO"] else 0,
+                help="Unidad de medida"
+            )
+            
+            descripcion = st.text_area(
+                "Descripción:",
+                value=producto.get('descripcion', ''),
+                help="Descripción detallada"
+            )
         
         with col2:
-            precio_venta = producto.get('precio_venta') or producto.get('precio', 0)
-            precio = st.number_input("Precio Venta:", value=float(precio_venta), step=0.01)
-            precio_costo = st.number_input("Precio Costo:", value=float(producto.get('precio_costo', 0)), step=0.01)
-            iva_porcentaje = st.selectbox("IVA (%):", [0, 5, 19], 
-                                        index=[0, 5, 19].index(producto.get('iva_porcentaje', 19)))
-            activo = st.checkbox("Activo", value=producto.get('activo', True))
-        
-        observaciones = st.text_area("Observaciones:", value=producto.get('observaciones', ''))
-        
-        if st.form_submit_button("💾 Actualizar Producto", use_container_width=True):
-            datos_actualizacion = {
-                "nombre": nombre,
-                "descripcion": descripcion if descripcion else None,
-                "categoria": categoria if categoria else None,
-                "marca": marca if marca else None,
-                "precio": precio,
-                "precio_venta": precio,
-                "precio_costo": precio_costo,
-                "iva_porcentaje": iva_porcentaje,
-                "activo": activo,
-                "observaciones": observaciones if observaciones else None
-            }
+            st.markdown("#### 💰 Información Comercial")
             
-            actualizar_producto_backend(backend_url, producto['id_producto'], datos_actualizacion)
+            precio_venta = producto.get('precio_venta', 0)
+            precio_venta_float = float(precio_venta) if precio_venta else 0.0
+            
+            precio = st.number_input(
+                "Precio de Venta*:",
+                value=precio_venta_float,
+                min_value=0.0,
+                step=0.01,
+                help="Precio de venta al público"
+            )
+            
+            precio_compra = producto.get('precio_compra', 0)
+            precio_compra_float = float(precio_compra) if precio_compra else 0.0
+            
+            precio_costo = st.number_input(
+                "Precio de Compra:",
+                value=precio_compra_float,
+                min_value=0.0,
+                step=0.01,
+                help="Costo de adquisición"
+            )
+            
+            # Calcular margen de utilidad
+            if precio_costo > 0 and precio > 0:
+                margen_actual = ((precio - precio_costo) / precio_costo) * 100
+                st.info(f"📊 Margen de Utilidad Actual: {margen_actual:.1f}%")
+            
+            porcentaje_iva_actual = producto.get('porcentaje_iva', 13)
+            try:
+                porcentaje_iva_actual = int(float(porcentaje_iva_actual))
+            except (ValueError, TypeError):
+                porcentaje_iva_actual = 13
+            
+            iva_porcentaje = st.selectbox(
+                "IVA (%):",
+                [0, 5, 13, 19],
+                index=[0, 5, 13, 19].index(porcentaje_iva_actual) if porcentaje_iva_actual in [0, 5, 13, 19] else 2,
+                help="Porcentaje de IVA"
+            )
+            
+            st.markdown("#### ⚙️ Estado")
+            
+            estado_producto = st.selectbox(
+                "Estado del Producto:",
+                ["ACTIVO", "INACTIVO", "DESCONTINUADO"],
+                index=["ACTIVO", "INACTIVO", "DESCONTINUADO"].index(producto.get('estado_producto', 'ACTIVO')) if producto.get('estado_producto') in ["ACTIVO", "INACTIVO", "DESCONTINUADO"] else 0,
+                help="Estado del producto en el sistema"
+            )
+        
+        # Información de inventario si existe
+        if producto.get('maneja_inventario') or producto.get('stock_actual') is not None:
+            st.markdown("#### 📦 Control de Inventario")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                stock_actual = st.number_input(
+                    "Stock Actual:",
+                    value=float(producto.get('stock_actual', 0)),
+                    min_value=0.0,
+                    step=1.0
+                )
+            
+            with col2:
+                stock_minimo = st.number_input(
+                    "Stock Mínimo:",
+                    value=float(producto.get('stock_minimo', 0)),
+                    min_value=0.0,
+                    step=1.0
+                )
+            
+            with col3:
+                stock_maximo = st.number_input(
+                    "Stock Máximo:",
+                    value=float(producto.get('stock_maximo', 0)),
+                    min_value=0.0,
+                    step=1.0
+                )
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            submitted = st.form_submit_button("💾 Actualizar Producto", use_container_width=True, type="primary")
+        
+        with col2:
+            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+        
+        if submitted:
+            if not nombre or not precio or precio <= 0:
+                st.error("❌ Complete los campos obligatorios marcados con *")
+            else:
+                datos_actualizacion = {
+                    "nombre": nombre,
+                    "descripcion": descripcion if descripcion else None,
+                    "tipo_producto": tipo_producto,
+                    "categoria_producto": categoria_producto if categoria_producto else None,
+                    "unidad_medida": unidad_medida,
+                    "precio_venta": precio,
+                    "precio_compra": precio_costo,
+                    "porcentaje_iva": float(iva_porcentaje),
+                    "estado_producto": estado_producto
+                }
+                
+                # Agregar datos de inventario si existen
+                if producto.get('maneja_inventario') or producto.get('stock_actual') is not None:
+                    datos_actualizacion["stock_actual"] = stock_actual
+                    datos_actualizacion["stock_minimo"] = stock_minimo
+                    datos_actualizacion["stock_maximo"] = stock_maximo
+                
+                actualizar_producto_backend(backend_url, producto['id_producto'], datos_actualizacion)
+        
+        if cancelar:
+            st.rerun()
 
 def actualizar_precio_producto(backend_url: str, producto: Dict[str, Any]):
     """Actualización rápida de precio"""
     
-    st.markdown(f"### 💰 Actualizar Precio: {producto.get('nombre', 'N/A')}")
+    st.markdown(f"## 💰 Actualizar Precio")
+    st.markdown(f"### {producto.get('nombre', 'N/A')}")
+    st.caption(f"Código: {producto.get('codigo_producto', 'N/A')}")
+    st.markdown("---")
     
-    with st.form(f"form_precio_{producto['id_producto']}"):
+    # Convertir precio actual a float de manera segura
+    try:
+        precio_actual = float(producto.get('precio_venta', producto.get('precio', 0)))
+    except (ValueError, TypeError):
+        precio_actual = 0.0
+    
+    with st.form(f"form_precio_{producto['id_producto']}", clear_on_submit=False):
+        st.markdown("### 📊 Información Actual")
+        st.markdown("")
+        
+        col1, col2, col3 = st.columns(3, gap="medium")
+        
+        with col1:
+            st.metric("💵 Precio Actual", f"${precio_actual:,.2f}")
+        
+        with col2:
+            try:
+                precio_compra = float(producto.get('precio_compra', producto.get('precio_costo', 0)))
+            except (ValueError, TypeError):
+                precio_compra = 0.0
+            st.metric("💳 Precio Compra", f"${precio_compra:,.2f}")
+        
+        with col3:
+            if precio_compra > 0 and precio_actual > 0:
+                margen_actual = ((precio_actual - precio_compra) / precio_compra) * 100
+                st.metric("📈 Margen Actual", f"{margen_actual:.1f}%")
+        
+        st.markdown("---")
+        
+        nuevo_precio = st.number_input(
+            "💰 Nuevo Precio de Venta*:",
+            value=precio_actual,
+            step=0.01,
+            min_value=0.01,
+            help="Ingrese el nuevo precio de venta"
+        )
+        
+        # Mostrar variación y nuevo margen
         col1, col2 = st.columns(2)
         
         with col1:
-            precio_actual = producto.get('precio_venta') or producto.get('precio', 0)
-            st.metric("Precio Actual", f"${precio_actual:,.2f}")
-            
-            nuevo_precio = st.number_input(
-                "Nuevo Precio:",
-                value=float(precio_actual),
-                step=0.01,
-                min_value=0.01
-            )
-        
-        with col2:
             if precio_actual > 0:
                 variacion = ((nuevo_precio - precio_actual) / precio_actual) * 100
-                st.metric("Variación", f"{variacion:+.1f}%")
-            
-            motivo = st.text_input("Motivo del cambio:", placeholder="Ej: Aumento de costos")
+                delta_color = "normal" if variacion >= 0 else "inverse"
+                st.metric("Variación", f"{variacion:+.1f}%", delta=f"${nuevo_precio - precio_actual:+,.2f}")
         
-        if st.form_submit_button("💰 Actualizar Precio", use_container_width=True):
-            datos_precio = {
-                "precio": nuevo_precio,
-                "precio_venta": nuevo_precio,
-                "motivo_cambio": motivo if motivo else None
-            }
-            
-            actualizar_producto_backend(backend_url, producto['id_producto'], datos_precio)
+        with col2:
+            if precio_compra > 0:
+                nuevo_margen = ((nuevo_precio - precio_compra) / precio_compra) * 100
+                st.metric("Nuevo Margen", f"{nuevo_margen:.1f}%")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            submitted = st.form_submit_button("💰 Actualizar Precio", use_container_width=True, type="primary")
+        
+        with col2:
+            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+        
+        if submitted:
+            if nuevo_precio <= 0:
+                st.error("❌ El precio debe ser mayor a 0")
+            else:
+                datos_precio = {
+                    "precio_venta": nuevo_precio
+                }
+                actualizar_producto_backend(backend_url, producto['id_producto'], datos_precio)
+        
+        if cancelar:
+            st.rerun()
 
 def actualizar_producto_backend(backend_url: str, id_producto: int, datos: Dict[str, Any]):
     """Actualizar producto en el backend"""
@@ -629,25 +835,26 @@ def actualizar_producto_backend(backend_url: str, id_producto: int, datos: Dict[
     except Exception as e:
         st.error(f"❌ Error al actualizar producto: {e}")
 
-def cambiar_estado_producto(backend_url: str, id_producto: int, nuevo_estado: bool):
-    """Cambiar estado activo/inactivo del producto"""
+def cambiar_estado_producto(backend_url: str, id_producto: int, nuevo_estado_producto: str):
+    """Cambiar estado del producto (ACTIVO/INACTIVO/DESCONTINUADO)"""
     
     try:
         with st.spinner("Cambiando estado..."):
-            response = requests.patch(
-                f"{backend_url}/api/productos/{id_producto}/estado",
-                json={"activo": nuevo_estado}
+            # Usar PUT para actualizar el estado del producto
+            response = requests.put(
+                f"{backend_url}/api/productos/{id_producto}",
+                json={"estado_producto": nuevo_estado_producto}
             )
         
         if response.status_code == 200:
-            estado_texto = "activado" if nuevo_estado else "desactivado"
-            st.success(f"✅ Producto {estado_texto} exitosamente")
+            st.success(f"✅ Producto actualizado a estado: {nuevo_estado_producto}")
             st.rerun()
         else:
-            st.error(f"Error al cambiar estado: {response.status_code}")
+            error_detail = response.json().get('detail', 'Error desconocido')
+            st.error(f"❌ Error al cambiar estado: {error_detail}")
             
     except Exception as e:
-        st.error(f"Error al cambiar estado: {e}")
+        st.error(f"❌ Error al cambiar estado: {e}")
 
 def eliminar_producto(backend_url: str, id_producto: int):
     """Eliminar producto"""
@@ -838,7 +1045,7 @@ def listar_categorias(backend_url: str):
             productos_por_categoria = {}
             
             for producto in productos:
-                categoria = producto.get('categoria', 'Sin categoría')
+                categoria = producto.get('categoria_producto')
                 if categoria and categoria.strip():
                     categorias.add(categoria)
                     if categoria not in productos_por_categoria:
@@ -858,18 +1065,27 @@ def listar_categorias(backend_url: str):
                             # Mostrar estadísticas de la categoría
                             col1, col2, col3 = st.columns(3)
                             
-                            precios = [p.get('precio_venta', p.get('precio', 0)) for p in productos_cat]
+                            # Convertir precios a float de manera segura
+                            precios = []
+                            for p in productos_cat:
+                                try:
+                                    precio = p.get('precio_venta', p.get('precio', 0))
+                                    precios.append(float(precio) if precio else 0)
+                                except (ValueError, TypeError):
+                                    precios.append(0)
                             
                             with col1:
                                 st.metric("Productos", len(productos_cat))
                             
                             with col2:
-                                if precios:
+                                if precios and sum(precios) > 0:
                                     precio_promedio = sum(precios) / len(precios)
                                     st.metric("Precio Promedio", f"${precio_promedio:,.2f}")
+                                else:
+                                    st.metric("Precio Promedio", "$0.00")
                             
                             with col3:
-                                productos_activos_cat = len([p for p in productos_cat if p.get('activo', True)])
+                                productos_activos_cat = len([p for p in productos_cat if p.get('estado_producto') == 'ACTIVO'])
                                 st.metric("Activos", productos_activos_cat)
                             
                             # Lista de productos
@@ -890,8 +1106,9 @@ def crear_categoria(backend_url: str):
     """Crear nueva categoría"""
     
     st.markdown("### ➕ Crear Nueva Categoría")
+    st.info("ℹ️ Las categorías se crean automáticamente al asignar productos. Esta función te permite visualizar y planificar tus categorías.")
     
-    with st.form("form_nueva_categoria"):
+    with st.form("form_nueva_categoria", clear_on_submit=True):
         nombre_categoria = st.text_input(
             "Nombre de la Categoría*:",
             help="Nombre descriptivo de la categoría"
@@ -904,10 +1121,18 @@ def crear_categoria(backend_url: str):
         
         activa = st.checkbox("Categoría Activa", value=True)
         
-        if st.form_submit_button("🏷️ Crear Categoría", use_container_width=True):
-            if nombre_categoria.strip():
-                # Por ahora, solo mostrar confirmación
-                st.success(f"✅ Categoría '{nombre_categoria}' creada exitosamente!")
-                st.info("💡 Para asignar productos a esta categoría, edita los productos individuales")
-            else:
-                st.error("❌ Ingrese un nombre para la categoría")
+        submitted = st.form_submit_button("🏷️ Registrar Categoría", use_container_width=True, type="primary")
+    
+    if submitted:
+        if nombre_categoria.strip():
+            st.success(f"✅ Categoría '{nombre_categoria}' registrada exitosamente!")
+            st.info("💡 Para asignar productos a esta categoría, ve a 'Registrar Producto' o edita productos existentes.")
+            
+            # Mostrar resumen
+            with st.expander("📄 Detalles de la Categoría", expanded=True):
+                st.write(f"**Nombre:** {nombre_categoria}")
+                if descripcion_categoria:
+                    st.write(f"**Descripción:** {descripcion_categoria}")
+                st.write(f"**Estado:** {'Activa' if activa else 'Inactiva'}")
+        else:
+            st.error("❌ Ingrese un nombre para la categoría")
