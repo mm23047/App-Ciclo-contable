@@ -98,6 +98,13 @@ def create_asiento_form(backend_url: str, transaction_id: int, accounts: List[Di
             help="Monto del asiento (debe ser mayor que 0)"
         )
         
+        # Optional description
+        descripcion_asiento = st.text_area(
+            "Descripción del Asiento (opcional)",
+            height=80,
+            help="Descripción detallada del asiento contable"
+        )
+        
         submitted = st.form_submit_button("Crear Asiento", type="primary")
         
         if submitted:
@@ -106,7 +113,8 @@ def create_asiento_form(backend_url: str, transaction_id: int, accounts: List[Di
                 "id_transaccion": transaction_id,
                 "id_cuenta": selected_account_id,
                 "debe": float(amount) if amount_type.startswith("Débito") else 0.00,
-                "haber": float(amount) if amount_type.startswith("Crédito") else 0.00
+                "haber": float(amount) if amount_type.startswith("Crédito") else 0.00,
+                "descripcion_asiento": descripcion_asiento if descripcion_asiento else None
             }
             
             try:

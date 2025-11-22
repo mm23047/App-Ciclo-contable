@@ -23,25 +23,36 @@ from datetime import date, datetime
 def crear_cliente(db: Session, cliente_data: ClienteCreate, usuario: str) -> Cliente:
     """Crear un nuevo cliente con validaciones"""
     
-    # Verificar que no exista un cliente con el mismo NIT/DUI
-    cliente_existente = db.query(Cliente).filter(
-        Cliente.nit_dui == cliente_data.nit_dui,
-        Cliente.estado_cliente == 'ACTIVO'
-    ).first()
+    # Verificar que no exista un cliente con el mismo NIT o código
+    if cliente_data.nit:
+        cliente_existente = db.query(Cliente).filter(
+            Cliente.nit == cliente_data.nit,
+            Cliente.estado_cliente == 'ACTIVO'
+        ).first()
+        
+        if cliente_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe un cliente activo con NIT: {cliente_data.nit}"
+            )
     
-    if cliente_existente:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ya existe un cliente activo con NIT/DUI: {cliente_data.nit_dui}"
-        )
+    if cliente_data.codigo_cliente:
+        codigo_existente = db.query(Cliente).filter(
+            Cliente.codigo_cliente == cliente_data.codigo_cliente
+        ).first()
+        
+        if codigo_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ya existe un cliente con el código: {cliente_data.codigo_cliente}"
+            )
     
     try:
-        db_cliente = Cliente(
-            **cliente_data.dict(),
-            fecha_registro=date.today(),
-            usuario_creacion=usuario,
-            estado_cliente='ACTIVO'
-        )
+        # Crear el cliente con los datos proporcionados
+        cliente_dict = cliente_data.dict(exclude_unset=True)
+        cliente_dict['usuario_creacion'] = usuario
+        
+        db_cliente = Cliente(**cliente_dict)
         db.add(db_cliente)
         db.commit()
         db.refresh(db_cliente)
@@ -72,9 +83,7 @@ def crear_producto(db: Session, producto_data: ProductoCreate, usuario: str) -> 
     try:
         db_producto = Producto(
             **producto_data.dict(),
-            fecha_creacion=date.today(),
-            usuario_creacion=usuario,
-            estado_producto='ACTIVO'
+            fecha_creacion=date.today()
         )
         db.add(db_producto)
         db.commit()
@@ -258,7 +267,7 @@ def _generar_asientos_factura(db: Session, factura: Factura, usuario: str):
         )
     
     # Crear transacción principal
-    descripcion_transaccion = f"Factura #{factura.numero_factura} - Cliente: {factura.cliente.nombre_cliente}"
+    descripcion_transaccion = f"Factura #{factura.numero_factura} - Cliente: {factura.cliente.nombre}"
     
     db_transaccion = Transaccion(
         id_periodo=periodo.id_periodo,
@@ -355,7 +364,8 @@ def obtener_reporte_ventas_periodo(
     # Agrupar por cliente
     ventas_por_cliente = {}
     for factura in facturas:
-        cliente_key = f"{factura.cliente.nit_dui} - {factura.cliente.nombre_cliente}"
+        nit_cliente = factura.cliente.nit or factura.cliente.dui or "SIN-NIT"
+        cliente_key = f"{nit_cliente} - {factura.cliente.nombre}"
         if cliente_key not in ventas_por_cliente:
             ventas_por_cliente[cliente_key] = {
                 'cantidad_facturas': 0,
@@ -493,8 +503,8 @@ def obtener_cuentas_por_cobrar(db: Session, fecha_corte: date = None) -> List[Di
             'numero_factura': factura.numero_factura,
             'cliente': {
                 'id': factura.id_cliente,
-                'nombre': factura.cliente.nombre_cliente,
-                'nit_dui': factura.cliente.nit_dui
+                'nombre': factura.cliente.nombre,
+                'nit': factura.cliente.nit or factura.cliente.dui
             },
             'fecha_factura': factura.fecha_factura,
             'fecha_vencimiento': factura.fecha_vencimiento,

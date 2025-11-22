@@ -38,14 +38,14 @@ def crear_nueva_factura(backend_url: str):
     
     # Obtener clientes disponibles
     try:
-        response_clientes = requests.get(f"{backend_url}/api/clientes")
+        response_clientes = requests.get(f"{backend_url}/api/facturacion/clientes")
         clientes = response_clientes.json() if response_clientes.status_code == 200 else []
     except:
         clientes = []
     
     # Obtener productos disponibles
     try:
-        response_productos = requests.get(f"{backend_url}/api/productos")
+        response_productos = requests.get(f"{backend_url}/api/facturacion/productos")
         productos = response_productos.json() if response_productos.status_code == 200 else []
     except:
         productos = []
@@ -68,7 +68,7 @@ def crear_nueva_factura(backend_url: str):
             # Selección de cliente
             opciones_clientes = [
                 f"{c['codigo_cliente']} - {c['nombre']} ({c['tipo_cliente']})"
-                for c in clientes if c['activo']
+                for c in clientes if c.get('estado_cliente') == 'ACTIVO'
             ]
             
             cliente_seleccionado = st.selectbox("Cliente:", opciones_clientes)
@@ -121,8 +121,8 @@ def crear_nueva_factura(backend_url: str):
             
             with col1:
                 opciones_productos = [
-                    f"{p['codigo_producto']} - {p['nombre']} - ${p['precio']:,.2f}"
-                    for p in productos if p['activo']
+                    f"{p['codigo_producto']} - {p['nombre']} - ${float(p.get('precio_venta', 0)):,.2f}"
+                    for p in productos if p.get('estado_producto') == 'ACTIVO'
                 ]
                 
                 if opciones_productos:
@@ -141,7 +141,7 @@ def crear_nueva_factura(backend_url: str):
                     codigo_prod = producto_sel.split(" - ")[0]
                     prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                     if prod_obj:
-                        precio_unitario = prod_obj['precio']
+                        precio_unitario = prod_obj.get('precio_venta', 0)
                 
                 precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key="precio_factura")
             
@@ -348,7 +348,7 @@ def gestion_facturas(backend_url: str):
     
     with col1:
         try:
-            response_clientes = requests.get(f"{backend_url}/api/clientes")
+            response_clientes = requests.get(f"{backend_url}/api/facturacion/clientes")
             clientes = response_clientes.json() if response_clientes.status_code == 200 else []
             
             opciones_clientes = ["Todos los clientes"] + [
@@ -718,7 +718,7 @@ def gestion_clientes(backend_url: str):
                 telefono = st.text_input("Teléfono:")
                 direccion = st.text_area("Dirección:")
                 tipo_cliente = st.selectbox("Tipo:", ["Empresa", "Persona Natural"])
-                activo = st.checkbox("Activo", value=True)
+                estado = st.selectbox("Estado:", ["ACTIVO", "INACTIVO", "BLOQUEADO"], index=0)
             
             col1, col2 = st.columns(2)
             
@@ -727,7 +727,7 @@ def gestion_clientes(backend_url: str):
                     if codigo_cliente and nombre and nit:
                         crear_cliente(
                             backend_url, codigo_cliente, nombre, nit, 
-                            email, telefono, direccion, tipo_cliente, activo
+                            email, telefono, direccion, tipo_cliente, estado
                         )
                     else:
                         st.error("❌ Complete los campos obligatorios")
@@ -742,26 +742,31 @@ def gestion_clientes(backend_url: str):
 
 def crear_cliente(
     backend_url: str, codigo: str, nombre: str, nit: str,
-    email: str, telefono: str, direccion: str, tipo: str, activo: bool
+    email: str, telefono: str, direccion: str, tipo: str, estado: str
 ):
     """Crear nuevo cliente"""
     
     try:
+        # Mapear el tipo de cliente al formato del backend
+        tipo_cliente_backend = "PERSONA_JURIDICA" if tipo == "Empresa" else "PERSONA_NATURAL"
+        estado_backend = estado  # Ya viene en formato correcto: ACTIVO, INACTIVO, BLOQUEADO
+        
         datos_cliente = {
-            "codigo_cliente": codigo,
+            "codigo_cliente": codigo if codigo else None,
             "nombre": nombre,
-            "nit": nit,
+            "nit": nit if nit else None,
             "email": email if email else None,
-            "telefono": telefono if telefono else None,
+            "telefono_principal": telefono if telefono else None,
             "direccion": direccion if direccion else None,
-            "tipo_cliente": tipo,
-            "activo": activo
+            "tipo_cliente": tipo_cliente_backend,
+            "estado_cliente": estado_backend,
+            "usuario_creacion": "SISTEMA"  # Campo requerido
         }
         
         with st.spinner("Creando cliente..."):
-            response = requests.post(f"{backend_url}/api/clientes", json=datos_cliente)
+            response = requests.post(f"{backend_url}/api/facturacion/clientes", json=datos_cliente)
         
-        if response.status_code == 201:
+        if response.status_code in [200, 201]:
             st.success("✅ Cliente creado exitosamente")
             st.session_state.mostrar_form_cliente = False
             st.rerun()
@@ -777,7 +782,7 @@ def mostrar_lista_clientes(backend_url: str):
     
     try:
         with st.spinner("Cargando clientes..."):
-            response = requests.get(f"{backend_url}/api/clientes")
+            response = requests.get(f"{backend_url}/api/facturacion/clientes")
         
         if response.status_code == 200:
             clientes = response.json()
@@ -787,11 +792,27 @@ def mostrar_lista_clientes(backend_url: str):
                 
                 df_clientes = pd.DataFrame(clientes)
                 
-                # Formatear para mostrar
-                df_display = df_clientes[['codigo_cliente', 'nombre', 'nit', 'tipo_cliente', 'activo']].copy()
-                df_display.columns = ['Código', 'Nombre', 'NIT/CC', 'Tipo', 'Activo']
+                # Formatear para mostrar - usar los campos correctos del schema
+                columnas_disponibles = []
+                for col in ['codigo_cliente', 'nombre', 'nit', 'tipo_cliente', 'estado_cliente']:
+                    if col in df_clientes.columns:
+                        columnas_disponibles.append(col)
                 
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                if columnas_disponibles:
+                    df_display = df_clientes[columnas_disponibles].copy()
+                    # Renombrar columnas para mejor visualización
+                    nombres_columnas = {
+                        'codigo_cliente': 'Código',
+                        'nombre': 'Nombre',
+                        'nit': 'NIT',
+                        'tipo_cliente': 'Tipo',
+                        'estado_cliente': 'Estado'
+                    }
+                    df_display.columns = [nombres_columnas.get(col, col) for col in columnas_disponibles]
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay datos suficientes para mostrar")
             else:
                 st.info("📭 No hay clientes registrados")
         else:
@@ -826,22 +847,22 @@ def gestion_productos(backend_url: str):
             with col1:
                 codigo_producto = st.text_input("Código Producto*:")
                 nombre = st.text_input("Nombre*:")
-                precio = st.number_input("Precio*:", min_value=0.0, step=0.01)
-                tipo_producto = st.selectbox("Tipo:", ["Producto", "Servicio"])
+                precio_unitario = st.number_input("Precio Unitario*:", min_value=0.0, step=0.01)
+                tipo_producto = st.selectbox("Tipo:", ["PRODUCTO", "SERVICIO", "COMBO"])
             
             with col2:
                 descripcion = st.text_area("Descripción:")
                 categoria = st.text_input("Categoría:")
-                activo = st.checkbox("Activo", value=True, key="activo_prod")
+                estado = st.selectbox("Estado:", ["ACTIVO", "INACTIVO", "DESCONTINUADO"], index=0)
             
             col1, col2 = st.columns(2)
             
             with col1:
                 if st.form_submit_button("💾 Guardar Producto", use_container_width=True):
-                    if codigo_producto and nombre and precio > 0:
+                    if codigo_producto and nombre and precio_unitario > 0:
                         crear_producto(
-                            backend_url, codigo_producto, nombre, precio,
-                            descripcion, categoria, tipo_producto, activo
+                            backend_url, codigo_producto, nombre, precio_unitario,
+                            descripcion, categoria, tipo_producto, estado
                         )
                     else:
                         st.error("❌ Complete los campos obligatorios")
@@ -855,8 +876,8 @@ def gestion_productos(backend_url: str):
     mostrar_lista_productos(backend_url)
 
 def crear_producto(
-    backend_url: str, codigo: str, nombre: str, precio: float,
-    descripcion: str, categoria: str, tipo: str, activo: bool
+    backend_url: str, codigo: str, nombre: str, precio_unitario: float,
+    descripcion: str, categoria: str, tipo: str, estado: str
 ):
     """Crear nuevo producto"""
     
@@ -865,16 +886,19 @@ def crear_producto(
             "codigo_producto": codigo,
             "nombre": nombre,
             "descripcion": descripcion if descripcion else None,
-            "precio": precio,
-            "categoria": categoria if categoria else None,
-            "tipo_producto": tipo,
-            "activo": activo
+            "tipo_producto": tipo,  # Ya viene en formato correcto (PRODUCTO, SERVICIO, COMBO)
+            "precio_venta": float(precio_unitario),
+            "precio_compra": 0.0,  # Valor por defecto
+            "aplica_iva": True,  # Valor por defecto
+            "porcentaje_iva": 13.0,  # Valor por defecto para El Salvador
+            "estado_producto": estado,  # Ya viene en formato correcto (ACTIVO, INACTIVO, DESCONTINUADO)
+            "categoria_producto": categoria if categoria else None
         }
         
         with st.spinner("Creando producto..."):
-            response = requests.post(f"{backend_url}/api/productos", json=datos_producto)
+            response = requests.post(f"{backend_url}/api/facturacion/productos", json=datos_producto)
         
-        if response.status_code == 201:
+        if response.status_code in [200, 201]:
             st.success("✅ Producto creado exitosamente")
             st.session_state.mostrar_form_producto = False
             st.rerun()
@@ -890,7 +914,7 @@ def mostrar_lista_productos(backend_url: str):
     
     try:
         with st.spinner("Cargando productos..."):
-            response = requests.get(f"{backend_url}/api/productos")
+            response = requests.get(f"{backend_url}/api/facturacion/productos")
         
         if response.status_code == 200:
             productos = response.json()
@@ -900,12 +924,32 @@ def mostrar_lista_productos(backend_url: str):
                 
                 df_productos = pd.DataFrame(productos)
                 
-                # Formatear para mostrar
-                df_display = df_productos[['codigo_producto', 'nombre', 'precio', 'tipo_producto', 'activo']].copy()
-                df_display['precio'] = df_display['precio'].apply(lambda x: f"${x:,.2f}")
-                df_display.columns = ['Código', 'Nombre', 'Precio', 'Tipo', 'Activo']
+                # Formatear para mostrar - usar los campos correctos del schema
+                columnas_disponibles = []
+                for col in ['codigo_producto', 'nombre', 'precio_venta', 'tipo_producto', 'estado_producto']:
+                    if col in df_productos.columns:
+                        columnas_disponibles.append(col)
                 
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                if columnas_disponibles:
+                    df_display = df_productos[columnas_disponibles].copy()
+                    
+                    # Formatear precio si existe
+                    if 'precio_venta' in df_display.columns:
+                        df_display['precio_venta'] = df_display['precio_venta'].apply(lambda x: f"${float(x):,.2f}")
+                    
+                    # Renombrar columnas para mejor visualización
+                    nombres_columnas = {
+                        'codigo_producto': 'Código',
+                        'nombre': 'Nombre',
+                        'precio_venta': 'Precio',
+                        'tipo_producto': 'Tipo',
+                        'estado_producto': 'Estado'
+                    }
+                    df_display.columns = [nombres_columnas.get(col, col) for col in columnas_disponibles]
+                    
+                    st.dataframe(df_display, use_container_width=True, hide_index=True)
+                else:
+                    st.info("No hay datos suficientes para mostrar")
             else:
                 st.info("📭 No hay productos registrados")
         else:

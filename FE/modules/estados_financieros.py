@@ -48,7 +48,7 @@ def balance_general(backend_url: str):
             
             if periodos:
                 opciones_periodos = [
-                    f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                    f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                     for p in periodos
                 ]
                 periodo_seleccionado = st.selectbox("Período:", opciones_periodos)
@@ -74,7 +74,7 @@ def balance_general(backend_url: str):
     
     if st.button("📊 Generar Balance General", use_container_width=True, type="primary"):
         nombre_periodo = periodo_seleccionado.split(" (")[0]
-        periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+        periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
         if periodo_obj:
             generar_balance_general(
@@ -127,7 +127,7 @@ def mostrar_balance_general(balance_data: Dict[str, Any], mostrar_codigos: bool,
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Período", balance_data.get('nombre_periodo', 'N/A'))
+        st.metric("Período", balance_data.get('descripcion', 'N/A'))
     
     with col2:
         st.metric("Fecha de Corte", balance_data.get('fecha_corte', 'N/A'))
@@ -343,7 +343,7 @@ def estado_resultados(backend_url: str):
             
             if periodos:
                 opciones_periodos = [
-                    f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                    f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                     for p in periodos
                 ]
                 periodo_seleccionado = st.selectbox("Período:", opciones_periodos, key="periodo_resultados")
@@ -366,7 +366,7 @@ def estado_resultados(backend_url: str):
     
     if st.button("📊 Generar Estado de Resultados", use_container_width=True, type="primary"):
         nombre_periodo = periodo_seleccionado.split(" (")[0]
-        periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+        periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
         if periodo_obj:
             generar_estado_resultados(
@@ -422,7 +422,7 @@ def mostrar_estado_resultados(resultados_data: Dict[str, Any], mostrar_margenes:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric("Período", resultados_data.get('nombre_periodo', 'N/A'))
+        st.metric("Período", resultados_data.get('descripcion', 'N/A'))
     
     with col2:
         fecha_desde = resultados_data.get('fecha_desde', 'N/A')
@@ -657,7 +657,7 @@ def analisis_comparativo(backend_url: str):
             return
         
         opciones_periodos = [
-            f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+            f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
             for p in periodos
         ]
         
@@ -704,8 +704,8 @@ def generar_analisis_comparativo_ejecutar(
         nombre_base = periodo_base.split(" (")[0]
         nombre_comp = periodo_comparacion.split(" (")[0]
         
-        periodo_obj_base = next((p for p in periodos if p['nombre_periodo'] == nombre_base), None)
-        periodo_obj_comp = next((p for p in periodos if p['nombre_periodo'] == nombre_comp), None)
+        periodo_obj_base = next((p for p in periodos if p['descripcion'] == nombre_base), None)
+        periodo_obj_comp = next((p for p in periodos if p['descripcion'] == nombre_comp), None)
         
         if not periodo_obj_base or not periodo_obj_comp:
             st.error("Error al identificar los períodos")

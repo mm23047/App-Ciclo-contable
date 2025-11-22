@@ -44,14 +44,14 @@ def configurar_saldos_iniciales(backend_url: str):
     
     # Selección de período
     opciones_periodos = [
-        f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+        f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
         for p in periodos
     ]
     periodo_seleccionado = st.selectbox("Período contable:", opciones_periodos)
     
     # Extraer información del período
     nombre_periodo = periodo_seleccionado.split(" (")[0]
-    periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+    periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
     
     if periodo_obj:
         # Opciones de configuración
@@ -122,7 +122,7 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
                 
                 if cuenta_obj:
                     # Mostrar información de la cuenta
-                    st.info(f"📋 **Tipo:** {cuenta_obj['tipo_cuenta']} | **Naturaleza:** {cuenta_obj['naturaleza_cuenta']}")
+                    st.info(f"📋 **Tipo:** {cuenta_obj['tipo_cuenta']} | **Código:** {cuenta_obj['codigo_cuenta']}")
                     
                     # Saldo actual si existe
                     saldo_actual = saldos_existentes.get(cuenta_obj['id_cuenta'], 0)
@@ -138,11 +138,18 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
                 help="Valor del saldo inicial para esta cuenta"
             )
             
-            # Descripción opcional
-            descripcion = st.text_area(
-                "Descripción (opcional):",
+            # Naturaleza del saldo
+            naturaleza_saldo = st.selectbox(
+                "Naturaleza del saldo:",
+                ["DEUDOR", "ACREEDOR"],
+                help="Indica si el saldo es deudor o acreedor"
+            )
+            
+            # Observaciones opcionales
+            observaciones = st.text_area(
+                "Observaciones (opcional):",
                 height=80,
-                help="Descripción del origen del saldo inicial"
+                help="Observaciones adicionales del saldo inicial"
             )
         
         # Botón para guardar
@@ -159,7 +166,8 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
                     periodo['id_periodo'],
                     cuenta_obj['id_cuenta'],
                     saldo_inicial,
-                    descripcion
+                    naturaleza_saldo,
+                    observaciones
                 )
             else:
                 st.warning("⚠️ Ingresa un saldo inicial diferente de cero")
@@ -169,7 +177,8 @@ def configurar_saldo_individual(
     id_periodo: int,
     id_cuenta: int,
     saldo_inicial: float,
-    descripcion: str
+    naturaleza_saldo: str,
+    observaciones: str
 ):
     """Configurar saldo inicial individual"""
     
@@ -178,7 +187,8 @@ def configurar_saldo_individual(
             "id_periodo": id_periodo,
             "id_cuenta": id_cuenta,
             "saldo_inicial": saldo_inicial,
-            "descripcion": descripcion if descripcion else None
+            "naturaleza_saldo": naturaleza_saldo,
+            "observaciones": observaciones if observaciones else None
         }
         
         with st.spinner("Configurando saldo inicial..."):
@@ -430,11 +440,19 @@ def procesar_carga_masiva(backend_url: str, id_periodo: int, df: pd.DataFrame):
                     descripcion = str(row.get('descripcion', '')).strip() if pd.notna(row.get('descripcion')) else None
                     
                     if codigo_cuenta in cuentas_dict and saldo_inicial != 0:
+                        # Determinar naturaleza del saldo según tipo de cuenta
+                        tipo_cuenta = cuentas_dict[codigo_cuenta].get('tipo_cuenta', '')
+                        if tipo_cuenta in ['Activo', 'Egreso']:
+                            naturaleza_saldo = 'DEUDOR' if saldo_inicial > 0 else 'ACREEDOR'
+                        else:  # Pasivo, Capital, Ingreso
+                            naturaleza_saldo = 'ACREEDOR' if saldo_inicial > 0 else 'DEUDOR'
+                        
                         datos_saldo = {
                             "id_periodo": id_periodo,
                             "id_cuenta": cuentas_dict[codigo_cuenta]['id_cuenta'],
-                            "saldo_inicial": saldo_inicial,
-                            "descripcion": descripcion
+                            "saldo_inicial": abs(saldo_inicial),
+                            "naturaleza_saldo": naturaleza_saldo,
+                            "observaciones": descripcion
                         }
                         
                         response = requests.post(f"{backend_url}/api/balance-inicial", json=datos_saldo)
@@ -477,11 +495,20 @@ def procesar_saldos_multiples(backend_url: str, id_periodo: int, saldos: List[Di
         with st.spinner(f"Configurando {len(saldos)} saldos..."):
             for saldo in saldos:
                 try:
+                    # Determinar naturaleza del saldo según tipo de cuenta
+                    tipo_cuenta = saldo.get('tipo_cuenta', '')
+                    saldo_valor = saldo['saldo_inicial']
+                    if tipo_cuenta in ['Activo', 'Egreso']:
+                        naturaleza_saldo = 'DEUDOR' if saldo_valor > 0 else 'ACREEDOR'
+                    else:  # Pasivo, Capital, Ingreso
+                        naturaleza_saldo = 'ACREEDOR' if saldo_valor > 0 else 'DEUDOR'
+                    
                     datos_saldo = {
                         "id_periodo": id_periodo,
                         "id_cuenta": saldo['id_cuenta'],
-                        "saldo_inicial": saldo['saldo_inicial'],
-                        "descripcion": saldo['descripcion'] if saldo['descripcion'] else None
+                        "saldo_inicial": abs(saldo_valor),
+                        "naturaleza_saldo": naturaleza_saldo,
+                        "observaciones": saldo['descripcion'] if saldo['descripcion'] else None
                     }
                     
                     response = requests.post(f"{backend_url}/api/balance-inicial", json=datos_saldo)
@@ -527,7 +554,7 @@ def consultar_balance_inicial(backend_url: str):
         
         if periodos:
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             periodo_consulta = st.selectbox("Período:", opciones_periodos, key="consulta_periodo")
@@ -543,7 +570,7 @@ def consultar_balance_inicial(backend_url: str):
             
             if st.button("🔍 Consultar Balance Inicial"):
                 nombre_periodo = periodo_consulta.split(" (")[0]
-                periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+                periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 
                 if periodo_obj:
                     mostrar_balance_inicial(backend_url, periodo_obj['id_periodo'], tipo_filtro, solo_con_saldo)
@@ -689,14 +716,14 @@ def validar_balance_inicial(backend_url: str):
         
         if periodos:
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             periodo_validacion = st.selectbox("Período a validar:", opciones_periodos, key="validacion_periodo")
             
             if st.button("🔍 Ejecutar Validación", use_container_width=True):
                 nombre_periodo = periodo_validacion.split(" (")[0]
-                periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+                periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 
                 if periodo_obj:
                     ejecutar_validacion_balance(backend_url, periodo_obj['id_periodo'])

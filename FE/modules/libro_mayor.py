@@ -59,7 +59,7 @@ def consultar_mayor(backend_url: str):
             periodos = response_periodos.json() if response_periodos.status_code == 200 else []
             
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             
@@ -81,7 +81,7 @@ def consultar_mayor(backend_url: str):
         if periodo_seleccionado:
             # Extraer ID del período
             nombre_periodo = periodo_seleccionado.split(" (")[0]
-            periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+            periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
             
             if periodo_obj:
                 id_periodo = periodo_obj['id_periodo']
@@ -310,7 +310,7 @@ def analisis_grafico(backend_url: str):
         
         if periodos:
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             
@@ -318,7 +318,7 @@ def analisis_grafico(backend_url: str):
             
             if st.button("📊 Generar Análisis Gráfico"):
                 nombre_periodo = periodo_seleccionado.split(" (")[0]
-                periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+                periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 
                 if periodo_obj:
                     generar_graficos_mayor(backend_url, periodo_obj['id_periodo'])
@@ -407,7 +407,7 @@ def resumen_cuentas(backend_url: str):
         
         if periodos:
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             
@@ -429,7 +429,7 @@ def resumen_cuentas(backend_url: str):
             
             if st.button("📋 Generar Resumen"):
                 nombre_periodo = periodo_seleccionado.split(" (")[0]
-                periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+                periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 
                 if periodo_obj:
                     generar_resumen_estadistico(

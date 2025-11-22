@@ -18,6 +18,7 @@ class BalanceInicialBase(BaseModel):
     id_cuenta: int = Field(..., description="ID de la cuenta contable")
     id_periodo: int = Field(..., description="ID del período contable")
     saldo_inicial: Decimal = Field(..., description="Saldo inicial de la cuenta", decimal_places=2)
+    naturaleza_saldo: str = Field(..., pattern="^(DEUDOR|ACREEDOR)$", description="Naturaleza del saldo")
     observaciones: Optional[str] = Field(None, max_length=500, description="Observaciones adicionales")
 
     @validator('saldo_inicial')

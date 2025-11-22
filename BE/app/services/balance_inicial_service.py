@@ -61,6 +61,7 @@ def crear_balance_inicial(db: Session, balance_data: BalanceInicialCreate, usuar
     try:
         db_balance = BalanceInicial(
             **balance_data.dict(),
+            fecha_registro=date.today(),
             fecha_creacion=date.today(),
             usuario_creacion=usuario,
             estado_balance='ACTIVO'
@@ -95,12 +96,13 @@ def obtener_balances_por_periodo(db: Session, periodo_id: int) -> List[Dict]:
     resultado = []
     for balance, codigo, nombre, tipo in balances:
         resultado.append({
-            "id_balance": balance.id_balance,
+            "id_balance": balance.id_balance_inicial,
             "id_cuenta": balance.id_cuenta,
             "codigo_cuenta": codigo,
             "nombre_cuenta": nombre,
             "tipo_cuenta": tipo,
             "saldo_inicial": float(balance.saldo_inicial),
+            "naturaleza_saldo": balance.naturaleza_saldo,
             "fecha_creacion": balance.fecha_creacion,
             "usuario_creacion": balance.usuario_creacion,
             "observaciones": balance.observaciones,
@@ -118,7 +120,7 @@ def actualizar_balance_inicial(
     """
     Actualizar un balance inicial existente
     """
-    balance = db.query(BalanceInicial).filter(BalanceInicial.id_balance == balance_id).first()
+    balance = db.query(BalanceInicial).filter(BalanceInicial.id_balance_inicial == balance_id).first()
     if not balance:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -161,7 +163,7 @@ def eliminar_balance_inicial(db: Session, balance_id: int, usuario: str) -> bool
     """
     Eliminar (desactivar) un balance inicial
     """
-    balance = db.query(BalanceInicial).filter(BalanceInicial.id_balance == balance_id).first()
+    balance = db.query(BalanceInicial).filter(BalanceInicial.id_balance_inicial == balance_id).first()
     if not balance:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -270,7 +272,7 @@ def obtener_resumen_balances_periodo(db: Session, periodo_id: int) -> Dict:
     """
     resumen = db.query(
         CatalogoCuentas.tipo_cuenta,
-        func.count(BalanceInicial.id_balance).label('cantidad_cuentas'),
+        func.count(BalanceInicial.id_balance_inicial).label('cantidad_cuentas'),
         func.sum(BalanceInicial.saldo_inicial).label('total_saldo')
     ).join(
         BalanceInicial, CatalogoCuentas.id_cuenta == BalanceInicial.id_cuenta

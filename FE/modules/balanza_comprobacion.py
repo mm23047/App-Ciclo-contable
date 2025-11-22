@@ -44,7 +44,7 @@ def generar_balanza(backend_url: str):
             
             if periodos:
                 opciones_periodos = [
-                    f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                    f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                     for p in periodos
                 ]
                 periodo_seleccionado = st.selectbox("Período contable:", opciones_periodos)
@@ -113,7 +113,7 @@ def generar_balanza(backend_url: str):
     if st.button("📊 Generar Balanza de Comprobación", use_container_width=True, type="primary"):
         # Extraer ID del período
         nombre_periodo = periodo_seleccionado.split(" (")[0]
-        periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+        periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
         if periodo_obj:
             obtener_balanza_comprobacion(
@@ -198,7 +198,7 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Período", datos_balanza.get('nombre_periodo', 'N/A'))
+        st.metric("Período", datos_balanza.get('descripcion', 'N/A'))
     
     with col2:
         fecha_generacion = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -377,14 +377,14 @@ def analisis_grafico_balanza(backend_url: str):
         
         if periodos:
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             periodo_grafico = st.selectbox("Seleccionar período:", opciones_periodos, key="grafico_balanza")
             
             if st.button("📊 Generar Gráficos"):
                 nombre_periodo = periodo_grafico.split(" (")[0]
-                periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+                periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
                 
                 if periodo_obj:
                     generar_graficos_balanza(backend_url, periodo_obj['id_periodo'])
@@ -520,7 +520,7 @@ def comparativo_periodos(backend_url: str):
             return
         
         opciones_periodos = [
-            f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+            f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
             for p in periodos
         ]
         
@@ -581,8 +581,8 @@ def generar_comparativo_periodos(
         nombre_periodo1 = periodo1.split(" (")[0]
         nombre_periodo2 = periodo2.split(" (")[0]
         
-        periodo_obj1 = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo1), None)
-        periodo_obj2 = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo2), None)
+        periodo_obj1 = next((p for p in periodos if p['descripcion'] == nombre_periodo1), None)
+        periodo_obj2 = next((p for p in periodos if p['descripcion'] == nombre_periodo2), None)
         
         if not periodo_obj1 or not periodo_obj2:
             st.error("Error al identificar los períodos")

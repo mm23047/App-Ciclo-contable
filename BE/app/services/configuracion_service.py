@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from fastapi import HTTPException, status
 from app.models.estados_financieros import ConfiguracionEstadosFinancieros
-from app.models.configuracion_categoria import ConfiguracionCategoria
+from app.models.configuracion_categoria import ConfiguracionContableCategoria
 from app.models.periodo import PeriodoContable
 from typing import Dict, List, Optional, Any
 from decimal import Decimal
@@ -100,12 +100,12 @@ def actualizar_configuracion_empresa(
             detail=f"Error al actualizar configuración: {str(e)}"
         )
 
-def obtener_configuraciones_categoria(db: Session) -> List[ConfiguracionCategoria]:
+def obtener_configuraciones_categoria(db: Session) -> List[ConfiguracionContableCategoria]:
     """Obtener todas las configuraciones de categorías"""
     
-    return db.query(ConfiguracionCategoria).filter(
-        ConfiguracionCategoria.activa == True
-    ).order_by(ConfiguracionCategoria.categoria).all()
+    return db.query(ConfiguracionContableCategoria).filter(
+        ConfiguracionContableCategoria.activa == True
+    ).order_by(ConfiguracionContableCategoria.categoria).all()
 
 def crear_configuracion_categoria(
     db: Session,
@@ -113,13 +113,13 @@ def crear_configuracion_categoria(
     descripcion: str,
     configuracion_json: Dict[str, Any],
     usuario: str
-) -> ConfiguracionCategoria:
+) -> ConfiguracionContableCategoria:
     """Crear nueva configuración de categoría"""
     
     # Verificar que no exista una configuración activa para esta categoría
-    config_existente = db.query(ConfiguracionCategoria).filter(
-        ConfiguracionCategoria.categoria == categoria,
-        ConfiguracionCategoria.activa == True
+    config_existente = db.query(ConfiguracionContableCategoria).filter(
+        ConfiguracionContableCategoria.categoria == categoria,
+        ConfiguracionContableCategoria.activa == True
     ).first()
     
     if config_existente:
@@ -129,7 +129,7 @@ def crear_configuracion_categoria(
         )
     
     try:
-        config = ConfiguracionCategoria(
+        config = ConfiguracionContableCategoria(
             categoria=categoria,
             descripcion=descripcion,
             configuracion_json=configuracion_json,
@@ -156,11 +156,11 @@ def actualizar_configuracion_categoria(
     descripcion: str = None,
     configuracion_json: Dict[str, Any] = None,
     usuario: str = "Sistema"
-) -> ConfiguracionCategoria:
+) -> ConfiguracionContableCategoria:
     """Actualizar configuración de categoría existente"""
     
-    config = db.query(ConfiguracionCategoria).filter(
-        ConfiguracionCategoria.id_configuracion == categoria_id
+    config = db.query(ConfiguracionContableCategoria).filter(
+        ConfiguracionContableCategoria.id_configuracion == categoria_id
     ).first()
     
     if not config:
@@ -229,9 +229,9 @@ def configurar_cuentas_contables_default(db: Session, usuario: str = "Sistema") 
     
     try:
         # Crear o actualizar configuración de cuentas contables
-        config = db.query(ConfiguracionCategoria).filter(
-            ConfiguracionCategoria.categoria == "CUENTAS_CONTABLES",
-            ConfiguracionCategoria.activa == True
+        config = db.query(ConfiguracionContableCategoria).filter(
+            ConfiguracionContableCategoria.categoria == "CUENTAS_CONTABLES",
+            ConfiguracionContableCategoria.activa == True
         ).first()
         
         if config:
@@ -239,7 +239,7 @@ def configurar_cuentas_contables_default(db: Session, usuario: str = "Sistema") 
             config.fecha_modificacion = date.today()
             config.usuario_modificacion = usuario
         else:
-            config = ConfiguracionCategoria(
+            config = ConfiguracionContableCategoria(
                 categoria="CUENTAS_CONTABLES",
                 descripcion="Configuración de cuentas contables por defecto del sistema",
                 configuracion_json=configuracion_cuentas,
@@ -292,9 +292,9 @@ def configurar_parametros_facturacion(db: Session, usuario: str = "Sistema") -> 
     }
     
     try:
-        config = db.query(ConfiguracionCategoria).filter(
-            ConfiguracionCategoria.categoria == "FACTURACION",
-            ConfiguracionCategoria.activa == True
+        config = db.query(ConfiguracionContableCategoria).filter(
+            ConfiguracionContableCategoria.categoria == "FACTURACION",
+            ConfiguracionContableCategoria.activa == True
         ).first()
         
         if config:
@@ -302,7 +302,7 @@ def configurar_parametros_facturacion(db: Session, usuario: str = "Sistema") -> 
             config.fecha_modificacion = date.today()
             config.usuario_modificacion = usuario
         else:
-            config = ConfiguracionCategoria(
+            config = ConfiguracionContableCategoria(
                 categoria="FACTURACION",
                 descripcion="Configuración de parámetros de facturación",
                 configuracion_json=parametros_facturacion,
@@ -327,12 +327,12 @@ def configurar_parametros_facturacion(db: Session, usuario: str = "Sistema") -> 
             detail=f"Error al configurar parámetros de facturación: {str(e)}"
         )
 
-def obtener_configuracion_por_categoria(db: Session, categoria: str) -> Optional[ConfiguracionCategoria]:
+def obtener_configuracion_por_categoria(db: Session, categoria: str) -> Optional[ConfiguracionContableCategoria]:
     """Obtener configuración específica por categoría"""
     
-    return db.query(ConfiguracionCategoria).filter(
-        ConfiguracionCategoria.categoria == categoria,
-        ConfiguracionCategoria.activa == True
+    return db.query(ConfiguracionContableCategoria).filter(
+        ConfiguracionContableCategoria.categoria == categoria,
+        ConfiguracionContableCategoria.activa == True
     ).first()
 
 def obtener_valor_configuracion(
@@ -372,7 +372,7 @@ def establecer_valor_configuracion(
     
     if not config:
         # Crear nueva configuración si no existe
-        config = ConfiguracionCategoria(
+        config = ConfiguracionContableCategoria(
             categoria=categoria,
             descripcion=f"Configuración automática para {categoria}",
             configuracion_json={},

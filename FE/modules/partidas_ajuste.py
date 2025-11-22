@@ -48,7 +48,7 @@ def crear_partida_ajuste(backend_url: str):
         with col1:
             # Selección de período
             opciones_periodos = [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             periodo_seleccionado = st.selectbox("Período contable:", opciones_periodos)
@@ -60,26 +60,35 @@ def crear_partida_ajuste(backend_url: str):
                 help="Fecha de registro del ajuste"
             )
             
-            # Tipo de ajuste
-            tipos_ajuste = [
-                "Depreciación de activos fijos",
-                "Provision para cuentas incobrables", 
-                "Ajuste de inventarios",
-                "Gastos anticipados",
-                "Ingresos diferidos",
-                "Provision para impuestos",
-                "Provision para prestaciones laborales",
-                "Ajuste de devengos",
-                "Corrección de errores",
-                "Otro"
-            ]
-            tipo_ajuste = st.selectbox("Tipo de ajuste:", tipos_ajuste)
+            # Número de partida
+            numero_partida = st.text_input(
+                "Número de partida:",
+                max_chars=20,
+                help="Número único de la partida de ajuste (máximo 20 caracteres)"
+            )
             
-            if tipo_ajuste == "Otro":
-                tipo_personalizado = st.text_input("Especificar tipo de ajuste:")
-                tipo_ajuste_final = tipo_personalizado if tipo_personalizado else tipo_ajuste
-            else:
-                tipo_ajuste_final = tipo_ajuste
+            # Tipo de ajuste
+            tipos_ajuste_display = {
+                "DEPRECIACION": "Depreciación de activos fijos",
+                "PROVISION": "Provisión para cuentas incobrables", 
+                "AJUSTE_INVENTARIO": "Ajuste de inventarios",
+                "DIFERIDO": "Gastos anticipados / Ingresos diferidos",
+                "DEVENGO": "Ajuste de devengos",
+                "RECLASIFICACION": "Reclasificación de cuentas",
+                "CORRECCION_ERROR": "Corrección de errores",
+                "AJUSTE_CAMBIO": "Ajuste por cambio de método contable",
+                "OTROS": "Otro tipo de ajuste"
+            }
+            
+            tipo_ajuste_seleccionado = st.selectbox(
+                "Tipo de ajuste:", 
+                options=list(tipos_ajuste_display.keys()),
+                format_func=lambda x: tipos_ajuste_display[x]
+            )
+            
+            # Si selecciona OTROS, permitir especificar
+            if tipo_ajuste_seleccionado == "OTROS":
+                motivo_adicional = st.text_input("Especificar tipo de ajuste:", help="Describa el tipo de ajuste personalizado")
         
         with col2:
             # Descripción del ajuste
@@ -89,28 +98,49 @@ def crear_partida_ajuste(backend_url: str):
                 help="Descripción detallada del motivo y naturaleza del ajuste"
             )
             
-            # Referencia
-            referencia = st.text_input(
-                "Referencia (opcional):",
-                help="Número de documento o referencia externa"
+            # Motivo del ajuste
+            motivo_ajuste = st.text_area(
+                "Motivo del ajuste:",
+                height=80,
+                help="Justificación técnica o legal del ajuste"
             )
             
-            # Observaciones
-            observaciones = st.text_area(
-                "Observaciones (opcional):",
-                height=80,
-                help="Observaciones adicionales sobre el ajuste"
+            # Usuario creación
+            usuario_creacion = st.text_input(
+                "Usuario de creación:",
+                max_chars=50,
+                value=st.session_state.get('usuario_actual', ''),
+                help="Nombre del usuario que registra el ajuste (máximo 50 caracteres)"
             )
         
-        st.markdown("### 📊 Movimientos del Ajuste")
-        st.markdown("Agrega los movimientos que componen esta partida de ajuste:")
+        # Botón para guardar datos del encabezado
+        guardar_encabezado = st.form_submit_button(
+            "💾 Guardar Encabezado", 
+            use_container_width=True
+        )
         
-        # Gestión de movimientos
-        if 'movimientos_ajuste' not in st.session_state:
-            st.session_state.movimientos_ajuste = []
-        
-        # Formulario para agregar movimiento
-        with st.expander("➕ Agregar Movimiento", expanded=True):
+        if guardar_encabezado:
+            st.session_state.ajuste_encabezado = {
+                'periodo_seleccionado': periodo_seleccionado,
+                'fecha_ajuste': fecha_ajuste,
+                'numero_partida': numero_partida,
+                'tipo_ajuste': tipo_ajuste_seleccionado,
+                'descripcion': descripcion,
+                'motivo_ajuste': motivo_ajuste,
+                'usuario_creacion': usuario_creacion
+            }
+            st.success("✅ Encabezado guardado. Ahora agrega los movimientos.")
+    
+    # Gestión de movimientos (fuera del form)
+    st.markdown("### 📊 Movimientos del Ajuste")
+    st.markdown("Agrega los movimientos que componen esta partida de ajuste:")
+    
+    # Gestión de movimientos
+    if 'movimientos_ajuste' not in st.session_state:
+        st.session_state.movimientos_ajuste = []
+    
+    # Formulario para agregar movimiento
+    with st.expander("➕ Agregar Movimiento", expanded=True):
             col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
             
             with col1:
@@ -136,7 +166,7 @@ def crear_partida_ajuste(backend_url: str):
                     cuenta_mov = None
             
             with col2:
-                descripcion_mov = st.text_input("Descripción del movimiento:", key="desc_movimiento")
+                descripcion_detalle_mov = st.text_input("Descripción del detalle:", key="desc_movimiento")
             
             with col3:
                 debe = st.number_input("Debe:", min_value=0.0, step=0.01, key="debe_mov")
@@ -145,7 +175,7 @@ def crear_partida_ajuste(backend_url: str):
                 haber = st.number_input("Haber:", min_value=0.0, step=0.01, key="haber_mov")
             
             if st.button("➕ Agregar Movimiento"):
-                if cuenta_mov and descripcion_mov and (debe > 0 or haber > 0):
+                if cuenta_mov and descripcion_detalle_mov and (debe > 0 or haber > 0):
                     if debe > 0 and haber > 0:
                         st.error("Un movimiento no puede tener valores en debe y haber al mismo tiempo")
                     else:
@@ -156,7 +186,7 @@ def crear_partida_ajuste(backend_url: str):
                             'id_cuenta': cuenta_obj['id_cuenta'],
                             'codigo_cuenta': codigo_cuenta,
                             'nombre_cuenta': cuenta_obj['nombre_cuenta'],
-                            'descripcion': descripcion_mov,
+                            'descripcion_detalle': descripcion_detalle_mov,
                             'debe': debe,
                             'haber': haber
                         }
@@ -165,88 +195,94 @@ def crear_partida_ajuste(backend_url: str):
                         st.rerun()
                 else:
                     st.error("Complete todos los campos requeridos")
+    
+    # Mostrar movimientos agregados
+    if st.session_state.movimientos_ajuste:
+        st.markdown("#### Movimientos agregados:")
         
-        # Mostrar movimientos agregados
-        if st.session_state.movimientos_ajuste:
-            st.markdown("#### Movimientos agregados:")
+        for i, mov in enumerate(st.session_state.movimientos_ajuste):
+            col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 1, 1])
             
-            for i, mov in enumerate(st.session_state.movimientos_ajuste):
-                col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 1, 1])
-                
-                with col1:
-                    st.text(mov['codigo_cuenta'])
-                
-                with col2:
-                    st.text(mov['nombre_cuenta'])
-                
-                with col3:
-                    st.text(f"${mov['debe']:,.2f}" if mov['debe'] > 0 else "-")
-                
-                with col4:
-                    st.text(f"${mov['haber']:,.2f}" if mov['haber'] > 0 else "-")
-                
-                with col5:
-                    if st.button("🗑️", key=f"eliminar_{i}", help="Eliminar movimiento"):
-                        st.session_state.movimientos_ajuste.pop(i)
-                        st.rerun()
-            
-            # Validar balance
-            total_debe = sum(m['debe'] for m in st.session_state.movimientos_ajuste)
-            total_haber = sum(m['haber'] for m in st.session_state.movimientos_ajuste)
-            diferencia = total_debe - total_haber
-            
-            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Debe", f"${total_debe:,.2f}")
-            with col2:
-                st.metric("Total Haber", f"${total_haber:,.2f}")
-            with col3:
-                st.metric(
-                    "Diferencia", 
-                    f"${abs(diferencia):,.2f}",
-                    delta=f"{'Debe' if diferencia > 0 else 'Haber' if diferencia < 0 else 'Balanceado'}"
-                )
+                st.text(mov['codigo_cuenta'])
             
-            if abs(diferencia) > 0.01:
-                st.warning("⚠️ Los movimientos no están balanceados. Debe = Haber")
+            with col2:
+                st.text(mov['nombre_cuenta'])
+            
+            with col3:
+                st.text(f"${mov['debe']:,.2f}" if mov['debe'] > 0 else "-")
+            
+            with col4:
+                st.text(f"${mov['haber']:,.2f}" if mov['haber'] > 0 else "-")
+            
+            with col5:
+                if st.button("🗑️", key=f"eliminar_{i}", help="Eliminar movimiento"):
+                    st.session_state.movimientos_ajuste.pop(i)
+                    st.rerun()
         
-        # Botón para guardar
-        submitted = st.form_submit_button(
-            "💾 Crear Partida de Ajuste", 
-            use_container_width=True,
-            type="primary"
-        )
+        # Validar balance
+        total_debe = sum(m['debe'] for m in st.session_state.movimientos_ajuste)
+        total_haber = sum(m['haber'] for m in st.session_state.movimientos_ajuste)
+        diferencia = total_debe - total_haber
         
-        if submitted:
-            if not st.session_state.movimientos_ajuste:
-                st.error("❌ Debe agregar al menos un movimiento")
-            elif abs(sum(m['debe'] for m in st.session_state.movimientos_ajuste) - 
-                    sum(m['haber'] for m in st.session_state.movimientos_ajuste)) > 0.01:
-                st.error("❌ Los movimientos deben estar balanceados (Debe = Haber)")
-            elif not descripcion:
-                st.error("❌ La descripción es requerida")
-            else:
-                crear_ajuste_backend(
-                    backend_url, 
-                    periodo_seleccionado, 
-                    periodos,
-                    fecha_ajuste,
-                    tipo_ajuste_final,
-                    descripcion,
-                    referencia,
-                    observaciones,
-                    st.session_state.movimientos_ajuste
-                )
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Debe", f"${total_debe:,.2f}")
+        with col2:
+            st.metric("Total Haber", f"${total_haber:,.2f}")
+        with col3:
+            st.metric(
+                "Diferencia", 
+                f"${abs(diferencia):,.2f}",
+                delta=f"{'Debe' if diferencia > 0 else 'Haber' if diferencia < 0 else 'Balanceado'}"
+            )
+        
+        if abs(diferencia) > 0.01:
+            st.warning("⚠️ Los movimientos no están balanceados. Debe = Haber")
+    
+    # Botón para crear la partida (fuera del form, usa datos de session_state)
+    if st.button("💾 Crear Partida de Ajuste", use_container_width=True, type="primary"):
+        encabezado = st.session_state.get('ajuste_encabezado', {})
+        
+        if not encabezado:
+            st.error("❌ Primero debes guardar el encabezado del ajuste")
+        elif not encabezado.get('numero_partida'):
+            st.error("❌ El número de partida es requerido")
+        elif not encabezado.get('usuario_creacion'):
+            st.error("❌ El usuario de creación es requerido")
+        elif not st.session_state.movimientos_ajuste:
+            st.error("❌ Debe agregar al menos un movimiento")
+        elif abs(sum(m['debe'] for m in st.session_state.movimientos_ajuste) - 
+                sum(m['haber'] for m in st.session_state.movimientos_ajuste)) > 0.01:
+            st.error("❌ Los movimientos deben estar balanceados (Debe = Haber)")
+        elif not encabezado.get('descripcion'):
+            st.error("❌ La descripción es requerida")
+        elif not encabezado.get('motivo_ajuste'):
+            st.error("❌ El motivo del ajuste es requerido")
+        else:
+            crear_ajuste_backend(
+                backend_url, 
+                encabezado['periodo_seleccionado'], 
+                periodos,
+                encabezado['numero_partida'],
+                encabezado['fecha_ajuste'],
+                encabezado['tipo_ajuste'],
+                encabezado['descripcion'],
+                encabezado['motivo_ajuste'],
+                encabezado['usuario_creacion'],
+                st.session_state.movimientos_ajuste
+            )
 
 def crear_ajuste_backend(
     backend_url: str, 
     periodo_seleccionado: str,
     periodos: List[Dict],
+    numero_partida: str,
     fecha_ajuste: date,
     tipo_ajuste: str,
     descripcion: str,
-    referencia: str,
-    observaciones: str,
+    motivo_ajuste: str,
+    usuario_creacion: str,
     movimientos: List[Dict]
 ):
     """Enviar partida de ajuste al backend"""
@@ -254,7 +290,7 @@ def crear_ajuste_backend(
     try:
         # Obtener ID del período
         nombre_periodo = periodo_seleccionado.split(" (")[0]
-        periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
+        periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
         
         if not periodo_obj:
             st.error("❌ Error al identificar el período")
@@ -262,16 +298,18 @@ def crear_ajuste_backend(
         
         # Preparar datos
         datos_ajuste = {
+            "numero_partida": numero_partida,
             "id_periodo": periodo_obj['id_periodo'],
             "fecha_ajuste": fecha_ajuste.isoformat(),
             "tipo_ajuste": tipo_ajuste,
             "descripcion": descripcion,
-            "referencia": referencia if referencia else None,
-            "observaciones": observaciones if observaciones else None,
-            "movimientos": [
+            "motivo_ajuste": motivo_ajuste,
+            "usuario_creacion": usuario_creacion,
+            "estado": "PENDIENTE",
+            "asientos_ajuste": [
                 {
                     "id_cuenta": mov['id_cuenta'],
-                    "descripcion": mov['descripcion'],
+                    "descripcion_detalle": mov['descripcion_detalle'],
                     "debe": mov['debe'],
                     "haber": mov['haber']
                 }
@@ -286,14 +324,16 @@ def crear_ajuste_backend(
                 json=datos_ajuste
             )
         
-        if response.status_code == 201:
+        if response.status_code in [200, 201]:
             st.success("✅ Partida de ajuste creada exitosamente!")
             st.session_state.movimientos_ajuste = []  # Limpiar movimientos
+            if 'ajuste_encabezado' in st.session_state:
+                del st.session_state.ajuste_encabezado  # Limpiar encabezado
             st.balloons()
             
             # Mostrar información del ajuste creado
             ajuste_creado = response.json()
-            st.info(f"📄 Ajuste creado con ID: {ajuste_creado.get('id_ajuste', 'N/A')}")
+            st.info(f"📄 Ajuste creado con ID: {ajuste_creado.get('id_partida_ajuste', ajuste_creado.get('id_ajuste', 'N/A'))}")
             
         else:
             error_detail = response.json().get('detail', 'Error desconocido')
@@ -319,7 +359,7 @@ def consultar_partidas_ajuste(backend_url: str):
             periodos = response_periodos.json() if response_periodos.status_code == 200 else []
             
             opciones_periodos = ["Todos los períodos"] + [
-                f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                 for p in periodos
             ]
             
@@ -372,27 +412,30 @@ def obtener_partidas_ajuste(
     """Obtener y mostrar partidas de ajuste"""
     
     try:
-        # Construir parámetros de consulta
-        params = {}
-        
+        # Determinar el período
         if periodo_filtro != "Todos los períodos":
             nombre_periodo = periodo_filtro.split(" (")[0]
-            periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
-            if periodo_obj:
-                params["id_periodo"] = periodo_obj['id_periodo']
+            periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
+            if not periodo_obj:
+                st.error("❌ Error: Período no encontrado")
+                return
+            periodo_id = periodo_obj['id_periodo']
+        else:
+            # Si no hay período específico, usar el primer período disponible o mostrar advertencia
+            if not periodos:
+                st.warning("⚠️ No hay períodos disponibles para consultar")
+                return
+            periodo_id = periodos[0]['id_periodo']  # Usar primer período como default
+        
+        # Construir parámetros de consulta
+        params = {}
         
         if tipo_filtro != "Todos los tipos":
             params["tipo_ajuste"] = tipo_filtro
         
-        if fecha_desde:
-            params["fecha_desde"] = fecha_desde.isoformat()
-        
-        if fecha_hasta:
-            params["fecha_hasta"] = fecha_hasta.isoformat()
-        
-        # Realizar consulta
+        # Realizar consulta usando el endpoint correcto
         with st.spinner("Consultando partidas de ajuste..."):
-            response = requests.get(f"{backend_url}/api/partidas-ajuste", params=params)
+            response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}", params=params)
         
         if response.status_code == 200:
             partidas = response.json()
@@ -415,58 +458,72 @@ def mostrar_partidas_ajuste(partidas: List[Dict[str, Any]]):
     
     for i, partida in enumerate(partidas):
         with st.expander(
-            f"🔍 ID: {partida['id_ajuste']} - {partida['tipo_ajuste']} - "
-            f"{partida['fecha_ajuste']} - ${partida.get('total_debe', 0):,.2f}",
+            f"🔍 ID: {partida['id_partida_ajuste']} - {partida['tipo_ajuste']} - "
+            f"{partida['fecha_ajuste']} - Estado: {partida.get('estado', 'N/A')}",
             expanded=False
         ):
             col1, col2 = st.columns(2)
             
             with col1:
                 st.markdown("**📋 Información General:**")
-                st.text(f"ID: {partida['id_ajuste']}")
+                st.text(f"ID: {partida['id_partida_ajuste']}")
+                st.text(f"Número: {partida['numero_partida']}")
                 st.text(f"Fecha: {partida['fecha_ajuste']}")
                 st.text(f"Tipo: {partida['tipo_ajuste']}")
-                st.text(f"Período: {partida.get('nombre_periodo', 'N/A')}")
+                st.text(f"Estado: {partida.get('estado', 'ACTIVO')}")
                 
-                if partida.get('referencia'):
-                    st.text(f"Referencia: {partida['referencia']}")
+                if partida.get('usuario_creacion'):
+                    st.text(f"Usuario: {partida['usuario_creacion']}")
             
             with col2:
-                st.markdown("**💰 Totales:**")
-                st.text(f"Total Debe: ${partida.get('total_debe', 0):,.2f}")
-                st.text(f"Total Haber: ${partida.get('total_haber', 0):,.2f}")
-                st.text(f"Estado: {partida.get('estado', 'N/A')}")
+                st.markdown("**📅 Fechas:**")
                 
                 if partida.get('fecha_creacion'):
-                    st.text(f"Creado: {partida['fecha_creacion']}")
+                    st.text(f"Creación: {partida['fecha_creacion'][:10]}")
+                
+                if partida.get('fecha_aprobacion'):
+                    st.text(f"Aprobación: {partida['fecha_aprobacion'][:10]}")
+                
+                if partida.get('usuario_aprobacion'):
+                    st.text(f"Aprobado por: {partida['usuario_aprobacion']}")
             
             # Descripción
             if partida.get('descripcion'):
                 st.markdown("**📝 Descripción:**")
                 st.text(partida['descripcion'])
             
-            # Observaciones
-            if partida.get('observaciones'):
-                st.markdown("**📄 Observaciones:**")
-                st.text(partida['observaciones'])
+            # Motivo del ajuste
+            if partida.get('motivo_ajuste'):
+                st.markdown("**📄 Motivo del Ajuste:**")
+                st.text(partida['motivo_ajuste'])
             
-            # Movimientos
-            if 'movimientos' in partida and partida['movimientos']:
-                st.markdown("**📊 Movimientos:**")
+            # Asientos de ajuste
+            if 'asientos_ajuste' in partida and partida['asientos_ajuste']:
+                st.markdown("**📊 Asientos de Ajuste:**")
                 
-                df_movimientos = pd.DataFrame(partida['movimientos'])
-                df_display = df_movimientos.copy()
+                # Calcular totales
+                total_debe = sum(float(a.get('debe', 0)) for a in partida['asientos_ajuste'])
+                total_haber = sum(float(a.get('haber', 0)) for a in partida['asientos_ajuste'])
                 
-                # Formatear columnas
-                df_display['debe'] = df_display['debe'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
-                df_display['haber'] = df_display['haber'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
+                col_t1, col_t2 = st.columns(2)
+                with col_t1:
+                    st.metric("Total Debe", f"${total_debe:,.2f}")
+                with col_t2:
+                    st.metric("Total Haber", f"${total_haber:,.2f}")
                 
-                # Seleccionar y renombrar columnas
-                columnas_mostrar = ['codigo_cuenta', 'nombre_cuenta', 'descripcion', 'debe', 'haber']
-                df_display = df_display[columnas_mostrar]
-                df_display.columns = ['Código', 'Cuenta', 'Descripción', 'Debe', 'Haber']
+                # Tabla de asientos
+                asientos_data = []
+                for asiento in partida['asientos_ajuste']:
+                    asientos_data.append({
+                        'ID Cuenta': asiento.get('id_cuenta', 'N/A'),
+                        'Descripción': asiento.get('descripcion_detalle', 'N/A'),
+                        'Debe': f"${float(asiento.get('debe', 0)):,.2f}" if float(asiento.get('debe', 0)) > 0 else "-",
+                        'Haber': f"${float(asiento.get('haber', 0)):,.2f}" if float(asiento.get('haber', 0)) > 0 else "-"
+                    })
                 
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
+                df_asientos = pd.DataFrame(asientos_data)
+                
+                st.dataframe(df_asientos, use_container_width=True, hide_index=True)
 
 def reportes_ajustes(backend_url: str):
     """Generar reportes de partidas de ajuste"""
@@ -494,7 +551,7 @@ def reportes_ajustes(backend_url: str):
             
             if periodos:
                 opciones_periodos = ["Todos los períodos"] + [
-                    f"{p['nombre_periodo']} ({p['fecha_inicio']} - {p['fecha_fin']})"
+                    f"{p['descripcion']} ({p['fecha_inicio']} - {p['fecha_fin']})"
                     for p in periodos
                 ]
                 periodo_reporte = st.selectbox("Período:", opciones_periodos, key="reporte_periodo")
@@ -506,11 +563,17 @@ def reportes_ajustes(backend_url: str):
             periodos = []
     
     with col2:
-        fecha_corte = st.date_input(
-            "Fecha de corte:",
-            value=datetime.now().date(),
-            help="Incluir ajustes hasta esta fecha"
+        fecha_desde_reporte = st.date_input(
+            "Fecha desde:",
+            value=None,
+            help="Fecha inicial del reporte (opcional)"
         )
+    
+    fecha_hasta_reporte = st.date_input(
+        "Fecha hasta:",
+        value=datetime.now().date(),
+        help="Incluir ajustes hasta esta fecha"
+    )
     
     if st.button("📊 Generar Reporte", use_container_width=True):
         generar_reporte_especifico(
@@ -518,7 +581,8 @@ def reportes_ajustes(backend_url: str):
             tipo_reporte,
             periodo_reporte,
             periodos,
-            fecha_corte
+            fecha_desde_reporte,
+            fecha_hasta_reporte
         )
 
 def generar_reporte_especifico(
@@ -526,33 +590,63 @@ def generar_reporte_especifico(
     tipo_reporte: str,
     periodo_reporte: str,
     periodos: List[Dict],
-    fecha_corte: date
+    fecha_desde: date,
+    fecha_hasta: date
 ):
     """Generar reporte específico según el tipo seleccionado"""
     
     try:
-        # Obtener datos base
-        params = {"fecha_hasta": fecha_corte.isoformat()}
+        # Por ahora, usar el endpoint de período para obtener datos
+        # El backend no tiene endpoint /reporte implementado
         
         if periodo_reporte != "Todos los períodos":
             nombre_periodo = periodo_reporte.split(" (")[0]
-            periodo_obj = next((p for p in periodos if p['nombre_periodo'] == nombre_periodo), None)
-            if periodo_obj:
-                params["id_periodo"] = periodo_obj['id_periodo']
+            periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
+            if not periodo_obj:
+                st.error("❌ Error: Período no encontrado")
+                return
+            periodo_id = periodo_obj['id_periodo']
+        else:
+            if not periodos:
+                st.warning("⚠️ No hay períodos disponibles")
+                return
+            periodo_id = periodos[0]['id_periodo']
         
-        response = requests.get(f"{backend_url}/api/partidas-ajuste/reporte", params=params)
+        # Usar endpoint de período para obtener partidas
+        response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}")
         
         if response.status_code == 200:
-            datos_reporte = response.json()
+            partidas = response.json()
             
+            # Filtrar por fechas si están especificadas
+            if fecha_desde or fecha_hasta:
+                partidas_filtradas = []
+                for p in partidas:
+                    fecha_ajuste = datetime.fromisoformat(p['fecha_ajuste'].replace('Z', '+00:00')).date()
+                    
+                    incluir = True
+                    if fecha_desde and fecha_ajuste < fecha_desde:
+                        incluir = False
+                    if fecha_hasta and fecha_ajuste > fecha_hasta:
+                        incluir = False
+                    
+                    if incluir:
+                        partidas_filtradas.append(p)
+                partidas = partidas_filtradas
+            
+            if not partidas:
+                st.info("📭 No hay partidas de ajuste en el rango de fechas especificado")
+                return
+            
+            # Generar reporte según el tipo
             if tipo_reporte == "Resumen por período":
-                mostrar_resumen_por_periodo(datos_reporte)
+                mostrar_resumen_por_periodo(partidas, periodo_reporte)
             elif tipo_reporte == "Análisis por tipo de ajuste":
-                mostrar_analisis_por_tipo(datos_reporte)
+                mostrar_analisis_por_tipo(partidas)
             elif tipo_reporte == "Evolución temporal":
-                mostrar_evolucion_temporal(datos_reporte)
+                mostrar_evolucion_temporal(partidas)
             elif tipo_reporte == "Detalle completo":
-                mostrar_detalle_completo(datos_reporte)
+                mostrar_detalle_completo(partidas)
                 
         else:
             st.error(f"Error al generar reporte: {response.status_code}")
@@ -560,151 +654,123 @@ def generar_reporte_especifico(
     except Exception as e:
         st.error(f"Error al generar reporte: {e}")
 
-def mostrar_resumen_por_periodo(datos: Dict[str, Any]):
+def mostrar_resumen_por_periodo(partidas: List[Dict], periodo_nombre: str):
     """Mostrar resumen de ajustes por período"""
     
-    st.markdown("### 📊 Resumen por Período")
+    st.markdown(f"### 📊 Resumen de Partidas de Ajuste - {periodo_nombre}")
     
-    if 'resumen_periodos' in datos:
-        resumen = datos['resumen_periodos']
-        
-        # Métricas generales
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Períodos", len(resumen))
-        
-        with col2:
-            total_ajustes = sum(p['cantidad_ajustes'] for p in resumen)
-            st.metric("Total Ajustes", total_ajustes)
-        
-        with col3:
-            total_debe = sum(p['total_debe'] for p in resumen)
-            st.metric("Total Debe", f"${total_debe:,.2f}")
-        
-        with col4:
-            promedio_por_periodo = total_debe / len(resumen) if resumen else 0
-            st.metric("Promedio por Período", f"${promedio_por_periodo:,.2f}")
-        
-        # Tabla de resumen
-        if resumen:
-            df_resumen = pd.DataFrame(resumen)
-            df_resumen['total_debe'] = df_resumen['total_debe'].apply(lambda x: f"${x:,.2f}")
-            df_resumen['total_haber'] = df_resumen['total_haber'].apply(lambda x: f"${x:,.2f}")
-            
-            df_resumen.columns = ['Período', 'Cantidad Ajustes', 'Total Debe', 'Total Haber']
-            
-            st.dataframe(df_resumen, use_container_width=True, hide_index=True)
+    if not partidas:
+        st.info("No hay partidas para mostrar")
+        return
+    
+    # Calcular métricas
+    total_partidas = len(partidas)
+    
+    # Sumar debe y haber de todos los asientos
+    total_debe = 0
+    total_haber = 0
+    for partida in partidas:
+        for asiento in partida.get('asientos_ajuste', []):
+            total_debe += float(asiento.get('debe', 0))
+            total_haber += float(asiento.get('haber', 0))
+    
+    # Contar por estado
+    activas = sum(1 for p in partidas if p.get('estado') == 'ACTIVO')
+    anuladas = sum(1 for p in partidas if p.get('estado') == 'ANULADO')
+    pendientes = sum(1 for p in partidas if p.get('estado') == 'PENDIENTE')
+    
+    # Métricas generales
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Partidas", total_partidas)
+    
+    with col2:
+        st.metric("Total Debe", f"${total_debe:,.2f}")
+    
+    with col3:
+        st.metric("Total Haber", f"${total_haber:,.2f}")
+    
+    with col4:
+        st.metric("Activas", activas, delta=f"{anuladas} anuladas" if anuladas > 0 else None)
+    
+    # Mostrar tabla de partidas
+    st.markdown("#### 📋 Listado de Partidas")
+    mostrar_partidas_ajuste(partidas)
 
-def mostrar_analisis_por_tipo(datos: Dict[str, Any]):
+def mostrar_analisis_por_tipo(partidas: List[Dict]):
     """Mostrar análisis por tipo de ajuste"""
     
     st.markdown("### 📊 Análisis por Tipo de Ajuste")
     
-    if 'resumen_tipos' in datos:
-        tipos = datos['resumen_tipos']
+    if not partidas:
+        st.info("No hay partidas para analizar")
+        return
+    
+    # Agrupar por tipo de ajuste
+    from collections import defaultdict
+    tipos_resumen = defaultdict(lambda: {'cantidad': 0, 'debe': 0, 'haber': 0})
+    
+    for partida in partidas:
+        tipo = partida.get('tipo_ajuste', 'OTROS')
+        tipos_resumen[tipo]['cantidad'] += 1
         
-        if tipos:
-            df_tipos = pd.DataFrame(tipos)
-            
-            # Gráfico de distribución
-            import plotly.express as px
-            
-            fig = px.pie(
-                df_tipos,
-                names='tipo_ajuste',
-                values='cantidad_ajustes',
-                title='Distribución de Ajustes por Tipo'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Tabla detallada
-            df_display = df_tipos.copy()
-            df_display['total_debe'] = df_display['total_debe'].apply(lambda x: f"${x:,.2f}")
-            df_display.columns = ['Tipo de Ajuste', 'Cantidad', 'Total Debe']
-            
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+        for asiento in partida.get('asientos_ajuste', []):
+            tipos_resumen[tipo]['debe'] += float(asiento.get('debe', 0))
+            tipos_resumen[tipo]['haber'] += float(asiento.get('haber', 0))
+    
+    # Convertir a DataFrame
+    datos_tabla = []
+    for tipo, valores in tipos_resumen.items():
+        datos_tabla.append({
+            'Tipo': tipo,
+            'Cantidad': valores['cantidad'],
+            'Total Debe': f"${valores['debe']:,.2f}",
+            'Total Haber': f"${valores['haber']:,.2f}"
+        })
+    
+    df_tipos = pd.DataFrame(datos_tabla)
+    st.dataframe(df_tipos, use_container_width=True, hide_index=True)
 
-def mostrar_evolucion_temporal(datos: Dict[str, Any]):
+def mostrar_evolucion_temporal(partidas: List[Dict]):
     """Mostrar evolución temporal de ajustes"""
     
     st.markdown("### 📊 Evolución Temporal")
     
-    if 'evolucion_temporal' in datos:
-        evolucion = datos['evolucion_temporal']
+    if not partidas:
+        st.info("No hay partidas para mostrar")
+        return
+    
+    # Agrupar por mes
+    from collections import defaultdict
+    evolucion = defaultdict(lambda: {'cantidad': 0, 'debe': 0})
+    
+    for partida in partidas:
+        fecha = partida.get('fecha_ajuste', '')[:7]  # YYYY-MM
+        evolucion[fecha]['cantidad'] += 1
         
-        if evolucion:
-            import plotly.graph_objects as go
-            
-            df_evolucion = pd.DataFrame(evolucion)
-            
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=df_evolucion['fecha'],
-                y=df_evolucion['cantidad_ajustes'],
-                mode='lines+markers',
-                name='Cantidad de Ajustes',
-                yaxis='y'
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df_evolucion['fecha'],
-                y=df_evolucion['total_debe'],
-                mode='lines+markers',
-                name='Total Debe ($)',
-                yaxis='y2'
-            ))
-            
-            fig.update_layout(
-                title='Evolución Temporal de Ajustes',
-                xaxis_title='Fecha',
-                yaxis=dict(title='Cantidad de Ajustes', side='left'),
-                yaxis2=dict(title='Total Debe ($)', side='right', overlaying='y'),
-                hovermode='x unified'
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+        for asiento in partida.get('asientos_ajuste', []):
+            evolucion[fecha]['debe'] += float(asiento.get('debe', 0))
+    
+    # Convertir a tabla
+    datos_tabla = []
+    for mes, valores in sorted(evolucion.items()):
+        datos_tabla.append({
+            'Mes': mes,
+            'Cantidad Partidas': valores['cantidad'],
+            'Total Debe': f"${valores['debe']:,.2f}"
+        })
+    
+    df_evolucion = pd.DataFrame(datos_tabla)
+    st.dataframe(df_evolucion, use_container_width=True, hide_index=True)
 
-def mostrar_detalle_completo(datos: Dict[str, Any]):
-    """Mostrar detalle completo de ajustes"""
+def mostrar_detalle_completo(partidas: List[Dict]):
+    """Mostrar detalle completo de partidas"""
     
-    st.markdown("### 📊 Detalle Completo")
+    st.markdown("### 📄 Detalle Completo de Partidas")
     
-    if 'detalle_completo' in datos:
-        detalle = datos['detalle_completo']
-        
-        if detalle:
-            # Convertir a DataFrame
-            registros = []
-            for ajuste in detalle:
-                for mov in ajuste.get('movimientos', []):
-                    registros.append({
-                        'ID Ajuste': ajuste['id_ajuste'],
-                        'Fecha': ajuste['fecha_ajuste'],
-                        'Tipo': ajuste['tipo_ajuste'],
-                        'Período': ajuste.get('nombre_periodo', 'N/A'),
-                        'Cuenta': f"{mov['codigo_cuenta']} - {mov['nombre_cuenta']}",
-                        'Descripción': mov['descripcion'],
-                        'Debe': mov['debe'],
-                        'Haber': mov['haber']
-                    })
-            
-            if registros:
-                df_detalle = pd.DataFrame(registros)
-                
-                # Formatear columnas monetarias
-                df_detalle['Debe'] = df_detalle['Debe'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
-                df_detalle['Haber'] = df_detalle['Haber'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
-                
-                st.dataframe(df_detalle, use_container_width=True, hide_index=True)
-                
-                # Opción de descarga
-                csv = df_detalle.to_csv(index=False)
-                st.download_button(
-                    label="📥 Descargar CSV",
-                    data=csv,
-                    file_name=f"partidas_ajuste_detalle_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv"
-                )
+    if not partidas:
+        st.info("No hay partidas para mostrar")
+        return
+    
+    mostrar_partidas_ajuste(partidas)

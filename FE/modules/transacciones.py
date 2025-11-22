@@ -76,6 +76,12 @@ def create_transaction_form(backend_url: str):
                 help="Descripción completa de la transacción"
             )
             
+            categoria = st.text_input(
+                "Categoría (opcional)",
+                value="VENTA",
+                help="Categoría de la transacción"
+            )
+            
             moneda = st.selectbox(
                 "Moneda",
                 ["USD", "EUR", "MXN", "COP"],
@@ -100,6 +106,19 @@ def create_transaction_form(backend_url: str):
                 st.error("❌ No se pudieron cargar los períodos disponibles")
                 selected_period_id = None
         
+        # Campos opcionales adicionales
+        with st.expander("➕ Campos Opcionales"):
+            numero_referencia = st.text_input(
+                "Número de Referencia (opcional)",
+                help="Número de referencia externo"
+            )
+            
+            observaciones = st.text_area(
+                "Observaciones (opcional)",
+                height=80,
+                help="Observaciones adicionales sobre la transacción"
+            )
+        
         submitted = st.form_submit_button("Crear Transacción", type="primary")
         
         if submitted:
@@ -121,7 +140,10 @@ def create_transaction_form(backend_url: str):
                 "tipo": tipo,
                 "moneda": moneda,
                 "usuario_creacion": usuario_creacion,
-                "id_periodo": selected_period_id
+                "id_periodo": selected_period_id,
+                "categoria": categoria if categoria else None,
+                "numero_referencia": numero_referencia if numero_referencia else None,
+                "observaciones": observaciones if observaciones else None
             }
             
             try:
