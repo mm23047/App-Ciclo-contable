@@ -173,16 +173,34 @@ def obtener_balanza_comprobacion(
         if filtro_nombre:
             params["filtro_nombre"] = filtro_nombre
         
-        # Realizar consulta
+        # Realizar consulta - primero intentar obtener análisis de cuentas
         with st.spinner("Generando balanza de comprobación..."):
+            # Usar endpoint de análisis de cuentas que retorna datos similares
             response = requests.get(
-                f"{backend_url}/api/balanza-comprobacion/{id_periodo}",
-                params=params
+                f"{backend_url}/api/balanza-comprobacion/analisis/{id_periodo}",
+                params={"tipo_cuenta": params.get("tipo_cuenta") if tipo_filtro != "Todos" else None}
             )
         
         if response.status_code == 200:
-            datos_balanza = response.json()
+            datos_analisis = response.json()
+            # Adaptar datos para mostrar como balanza
+            # El endpoint puede devolver una lista directamente o un dict con 'cuentas'
+            if isinstance(datos_analisis, list):
+                cuentas = datos_analisis
+            elif isinstance(datos_analisis, dict):
+                cuentas = datos_analisis.get('cuentas', [])
+            else:
+                cuentas = []
+            
+            datos_balanza = {
+                'descripcion': f'Período {id_periodo}',
+                'fecha_corte': fecha_corte.isoformat(),
+                'cuentas': cuentas
+            }
             mostrar_balanza_comprobacion(datos_balanza, formato_detallado)
+        elif response.status_code == 404:
+            st.error("❌ Error al generar balanza: 404")
+            st.info("💡 El endpoint de balanza no está disponible. Verifica la configuración del backend.")
         else:
             st.error(f"Error al generar balanza: {response.status_code}")
             
@@ -219,9 +237,11 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         # Crear DataFrame
         df_cuentas = pd.DataFrame(cuentas)
         
-        # Asegurar que los valores sean numéricos
+        
+        # Convertir columnas numéricas a float para evitar errores con Decimal
         for col in ['saldo_inicial', 'total_debe', 'total_haber', 'saldo_final']:
-            df_cuentas[col] = df_cuentas[col].apply(lambda x: float(x) if x else 0.0)
+            if col in df_cuentas.columns:
+                df_cuentas[col] = df_cuentas[col].apply(lambda x: float(x) if x is not None else 0.0)
         
         # Calcular totales
         total_debe = float(df_cuentas['total_debe'].sum())
@@ -268,9 +288,10 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         
         # Formatear columnas monetarias
         for col in ['saldo_inicial', 'total_debe', 'total_haber', 'saldo_final']:
-            df_display[f'{col}_fmt'] = df_display[col].apply(
-                lambda x: f"${x:,.2f}" if x != 0 else "-"
-            )
+            if col in df_display.columns:
+                df_display[f'{col}_fmt'] = df_display[col].apply(
+                    lambda x: f"${float(x):,.2f}" if x != 0 else "-"
+                )
         
         # Determinar naturaleza del saldo
         df_display['naturaleza_saldo'] = df_display['saldo_final'].apply(
@@ -279,10 +300,10 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         
         # Valor absoluto para saldos acreedores
         df_display['saldo_deudor'] = df_display['saldo_final'].apply(
-            lambda x: f"${x:,.2f}" if x > 0 else "-"
+            lambda x: f"${float(x):,.2f}" if float(x) > 0 else "-"
         )
         df_display['saldo_acreedor'] = df_display['saldo_final'].apply(
-            lambda x: f"${abs(x):,.2f}" if x < 0 else "-"
+            lambda x: f"${abs(float(x)):,.2f}" if float(x) < 0 else "-"
         )
         
         if formato_detallado:
@@ -329,7 +350,7 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
             top_deudores = df_cuentas[df_cuentas['saldo_final'] > 0].nlargest(10, 'saldo_final')
             if not top_deudores.empty:
                 for _, cuenta in top_deudores.iterrows():
-                    st.text(f"{cuenta['codigo_cuenta']}: ${cuenta['saldo_final']:,.2f}")
+                    st.text(f"{cuenta['codigo_cuenta']}: ${float(cuenta['saldo_final']):,.2f}")
             else:
                 st.info("No hay saldos deudores")
         
@@ -338,7 +359,7 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
             top_acreedores = df_cuentas[df_cuentas['saldo_final'] < 0].nsmallest(10, 'saldo_final')
             if not top_acreedores.empty:
                 for _, cuenta in top_acreedores.iterrows():
-                    st.text(f"{cuenta['codigo_cuenta']}: ${abs(cuenta['saldo_final']):,.2f}")
+                    st.text(f"{cuenta['codigo_cuenta']}: ${abs(float(cuenta['saldo_final'])):,.2f}")
             else:
                 st.info("No hay saldos acreedores")
         
@@ -402,15 +423,26 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
     """Generar gráficos de análisis de la balanza"""
     
     try:
-        # Obtener datos de la balanza
-        response = requests.get(f"{backend_url}/api/balanza-comprobacion/{id_periodo}")
+        # Obtener datos de la balanza usando endpoint de análisis
+        response = requests.get(f"{backend_url}/api/balanza-comprobacion/analisis/{id_periodo}")
         
         if response.status_code == 200:
-            datos_balanza = response.json()
-            cuentas = datos_balanza.get('cuentas', [])
+            datos_analisis = response.json()
+            # El endpoint puede devolver una lista directamente o un dict con 'cuentas'
+            if isinstance(datos_analisis, list):
+                cuentas = datos_analisis
+            elif isinstance(datos_analisis, dict):
+                cuentas = datos_analisis.get('cuentas', [])
+            else:
+                cuentas = []
             
             if cuentas:
                 df = pd.DataFrame(cuentas)
+                
+                # Convertir columnas numéricas a float
+                for col in ['saldo_inicial', 'total_debe', 'total_haber', 'saldo_final']:
+                    if col in df.columns:
+                        df[col] = df[col].apply(lambda x: float(x) if x is not None else 0.0)
                 
                 # Gráfico 1: Distribución por tipo de cuenta (Pie chart)
                 st.markdown("#### 📊 Distribución por Tipo de Cuenta")
@@ -592,17 +624,32 @@ def generar_comparativo_periodos(
             st.error("Error al identificar los períodos")
             return
         
-        # Obtener datos de ambos períodos
+        # Obtener datos de ambos períodos usando endpoint de análisis
         with st.spinner("Obteniendo datos de los períodos..."):
-            response1 = requests.get(f"{backend_url}/api/balanza-comprobacion/{periodo_obj1['id_periodo']}")
-            response2 = requests.get(f"{backend_url}/api/balanza-comprobacion/{periodo_obj2['id_periodo']}")
+            response1 = requests.get(f"{backend_url}/api/balanza-comprobacion/analisis/{periodo_obj1['id_periodo']}")
+            response2 = requests.get(f"{backend_url}/api/balanza-comprobacion/analisis/{periodo_obj2['id_periodo']}")
         
         if response1.status_code == 200 and response2.status_code == 200:
             datos1 = response1.json()
             datos2 = response2.json()
             
-            cuentas1 = {c['codigo_cuenta']: c for c in datos1.get('cuentas', [])}
-            cuentas2 = {c['codigo_cuenta']: c for c in datos2.get('cuentas', [])}
+            # Manejar tanto listas como diccionarios
+            if isinstance(datos1, list):
+                cuentas1_list = datos1
+            elif isinstance(datos1, dict):
+                cuentas1_list = datos1.get('cuentas', [])
+            else:
+                cuentas1_list = []
+            
+            if isinstance(datos2, list):
+                cuentas2_list = datos2
+            elif isinstance(datos2, dict):
+                cuentas2_list = datos2.get('cuentas', [])
+            else:
+                cuentas2_list = []
+            
+            cuentas1 = {c['codigo_cuenta']: c for c in cuentas1_list}
+            cuentas2 = {c['codigo_cuenta']: c for c in cuentas2_list}
             
             mostrar_comparativo(
                 cuentas1, cuentas2, 
@@ -637,8 +684,8 @@ def mostrar_comparativo(
         cuenta2 = cuentas2.get(codigo, {})
         
         nombre_cuenta = cuenta1.get('nombre_cuenta') or cuenta2.get('nombre_cuenta', 'N/A')
-        saldo1 = cuenta1.get('saldo_final', 0)
-        saldo2 = cuenta2.get('saldo_final', 0)
+        saldo1 = float(cuenta1.get('saldo_final', 0)) if cuenta1.get('saldo_final') is not None else 0.0
+        saldo2 = float(cuenta2.get('saldo_final', 0)) if cuenta2.get('saldo_final') is not None else 0.0
         diferencia = saldo2 - saldo1
         
         # Aplicar filtros según tipo de comparación
@@ -688,10 +735,10 @@ def mostrar_comparativo(
         df_display = df_comparativo.copy()
         
         # Formatear columnas monetarias
-        df_display['saldo_periodo1_fmt'] = df_display['saldo_periodo1'].apply(lambda x: f"${x:,.2f}")
-        df_display['saldo_periodo2_fmt'] = df_display['saldo_periodo2'].apply(lambda x: f"${x:,.2f}")
+        df_display['saldo_periodo1_fmt'] = df_display['saldo_periodo1'].apply(lambda x: f"${float(x):,.2f}")
+        df_display['saldo_periodo2_fmt'] = df_display['saldo_periodo2'].apply(lambda x: f"${float(x):,.2f}")
         df_display['diferencia_fmt'] = df_display['diferencia'].apply(
-            lambda x: f"${x:,.2f}" if x >= 0 else f"-${abs(x):,.2f}"
+            lambda x: f"${float(x):,.2f}" if float(x) >= 0 else f"-${abs(float(x)):,.2f}"
         )
         df_display['porcentaje_fmt'] = df_display['porcentaje_variacion'].apply(
             lambda x: f"{x:+.1f}%" if abs(x) < 999 else "N/A"
