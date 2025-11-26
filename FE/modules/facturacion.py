@@ -154,24 +154,16 @@ def crear_nueva_factura(backend_url: str):
     
     # Formulario para agregar productos
     with st.expander("➕ Agregar Producto/Servicio", expanded=True):
-        col1, col2, col3 = st.columns([4, 1.5, 1.5])
+        col1, col2, col3, col4, col5, col6 = st.columns([3, 1, 1, 1, 1, 1])
         
         with col1:
             opciones_productos = [
-                f"{p['codigo_producto']} - {p['nombre']}"
+                f"{p['codigo_producto']} - {p['nombre']} - ${float(p.get('precio_venta', 0)):,.2f}"
                 for p in productos if p.get('estado_producto') == 'ACTIVO'
             ]
             
             if opciones_productos:
                 producto_sel = st.selectbox("Producto/Servicio:", opciones_productos, key="prod_factura")
-                
-                # Mostrar precio del producto seleccionado
-                if producto_sel:
-                    codigo_prod = producto_sel.split(" - ")[0]
-                    prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
-                    if prod_obj:
-                        precio_producto = float(prod_obj.get('precio_venta', 0))
-                        st.info(f"💰 Precio unitario: **${precio_producto:,.2f}**")
             else:
                 st.warning("No hay productos activos")
                 producto_sel = None
@@ -182,13 +174,15 @@ def crear_nueva_factura(backend_url: str):
         with col3:
             # Obtener precio del producto seleccionado
             precio_unitario = 0.0
+            precio_key = "precio_factura"
             if producto_sel:
                 codigo_prod = producto_sel.split(" - ")[0]
                 prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                 if prod_obj:
                     precio_unitario = float(prod_obj.get('precio_venta', 0))
+                    precio_key = f"precio_factura_{codigo_prod}"
             
-            precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key="precio_factura")
+            precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key=precio_key)
         
         with col4:
             descuento = st.number_input("Desc. %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")

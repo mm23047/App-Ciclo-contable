@@ -742,10 +742,406 @@ def mostrar_comparativo_metricas(metricas1: Dict, metricas2: Dict, p1_inicio: da
     st.plotly_chart(fig_comp, width="stretch")
 
 def analisis_periodo_simple(backend_url: str, tipo_periodo: str):
-    """Análisis simple por período"""
+    """Análisis detallado por período (Mensual, Trimestral, Anual)"""
     
     st.markdown(f"### 📅 Análisis {tipo_periodo}")
-    st.info(f"💡 Análisis {tipo_periodo.lower()} implementado en futuras versiones")
+    
+    # Configuración de rango según tipo de período
+    if tipo_periodo == "Mensual":
+        # Selector de mes y año
+        col1, col2 = st.columns(2)
+        with col1:
+            año_seleccionado = st.selectbox("Año:", list(range(datetime.now().year, datetime.now().year - 5, -1)), key="mes_año")
+        with col2:
+            meses = {
+                "Enero": 1, "Febrero": 2, "Marzo": 3, "Abril": 4,
+                "Mayo": 5, "Junio": 6, "Julio": 7, "Agosto": 8,
+                "Septiembre": 9, "Octubre": 10, "Noviembre": 11, "Diciembre": 12
+            }
+            mes_nombre = st.selectbox("Mes:", list(meses.keys()), index=datetime.now().month - 1, key="mes_nombre")
+            mes_seleccionado = meses[mes_nombre]
+        
+        # Calcular primer y último día del mes
+        primer_dia = date(año_seleccionado, mes_seleccionado, 1)
+        if mes_seleccionado == 12:
+            ultimo_dia = date(año_seleccionado + 1, 1, 1) - timedelta(days=1)
+        else:
+            ultimo_dia = date(año_seleccionado, mes_seleccionado + 1, 1) - timedelta(days=1)
+        
+        fecha_desde = primer_dia
+        fecha_hasta = ultimo_dia
+        titulo_periodo = f"{mes_nombre} {año_seleccionado}"
+        
+    elif tipo_periodo == "Trimestral":
+        # Selector de trimestre y año
+        col1, col2 = st.columns(2)
+        with col1:
+            año_seleccionado = st.selectbox("Año:", list(range(datetime.now().year, datetime.now().year - 5, -1)), key="trim_año")
+        with col2:
+            trimestre = st.selectbox("Trimestre:", ["Q1 (Ene-Mar)", "Q2 (Abr-Jun)", "Q3 (Jul-Sep)", "Q4 (Oct-Dic)"], key="trimestre")
+        
+        # Calcular fechas del trimestre
+        trimestre_num = int(trimestre[1])
+        mes_inicio = (trimestre_num - 1) * 3 + 1
+        mes_fin = mes_inicio + 2
+        
+        fecha_desde = date(año_seleccionado, mes_inicio, 1)
+        if mes_fin == 12:
+            fecha_hasta = date(año_seleccionado, 12, 31)
+        else:
+            fecha_hasta = date(año_seleccionado, mes_fin + 1, 1) - timedelta(days=1)
+        
+        titulo_periodo = f"{trimestre} {año_seleccionado}"
+        
+    else:  # Anual
+        año_seleccionado = st.selectbox("Año:", list(range(datetime.now().year, datetime.now().year - 10, -1)), key="año_anual")
+        fecha_desde = date(año_seleccionado, 1, 1)
+        fecha_hasta = date(año_seleccionado, 12, 31)
+        titulo_periodo = f"Año {año_seleccionado}"
+    
+    # Botón para generar análisis
+    if st.button(f"📊 Generar Análisis {tipo_periodo}", type="primary", width="stretch"):
+        generar_analisis_detallado(backend_url, fecha_desde, fecha_hasta, tipo_periodo, titulo_periodo)
+
+
+def generar_analisis_detallado(backend_url: str, fecha_desde: date, fecha_hasta: date, tipo_periodo: str, titulo_periodo: str):
+    """Generar análisis detallado con gráficos y métricas"""
+    
+    try:
+        params = {"fecha_desde": fecha_desde.isoformat(), "fecha_hasta": fecha_hasta.isoformat()}
+        
+        with st.spinner(f"Generando análisis para {titulo_periodo}..."):
+            response = requests.get(f"{backend_url}/api/facturacion/facturas", params=params)
+        
+        if response.status_code == 200:
+            facturas = response.json()
+            
+            if not facturas:
+                st.warning(f"📭 No hay datos de ventas para {titulo_periodo}")
+                return
+            
+            # Convertir a DataFrame
+            df_facturas = pd.DataFrame(facturas)
+            
+            # Convertir columna total a float
+            if 'total' in df_facturas.columns:
+                df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+            
+            # Convertir fecha_emision a datetime
+            df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision'])
+            
+            # Mostrar resumen del período
+            st.success(f"📊 Análisis generado para: **{titulo_periodo}**")
+            st.info(f"📅 Período: {fecha_desde.strftime('%d/%m/%Y')} - {fecha_hasta.strftime('%d/%m/%Y')}")
+            
+            # Métricas principales
+            mostrar_metricas_principales_periodo(df_facturas)
+            
+            st.markdown("---")
+            
+            # Gráficos de evolución
+            mostrar_graficos_evolucion(df_facturas, tipo_periodo, titulo_periodo)
+            
+            st.markdown("---")
+            
+            # Análisis por estado de facturas
+            mostrar_analisis_estados(df_facturas)
+            
+            st.markdown("---")
+            
+            # Top clientes del período
+            mostrar_top_clientes_periodo(df_facturas)
+            
+        else:
+            st.error(f"Error al cargar datos: {response.status_code}")
+            
+    except Exception as e:
+        st.error(f"Error al generar análisis: {e}")
+
+
+def mostrar_metricas_principales_periodo(df: pd.DataFrame):
+    """Mostrar métricas principales del período"""
+    
+    st.markdown("### 💰 Métricas Principales")
+    
+    total_ventas = df['total'].sum()
+    total_facturas = len(df)
+    ticket_promedio = df['total'].mean()
+    clientes_unicos = df['id_cliente'].nunique() if 'id_cliente' in df.columns else 0
+    
+    # Facturas por estado
+    facturas_pagadas = len(df[df['estado_factura'] == 'PAGADA']) if 'estado_factura' in df.columns else 0
+    facturas_pendientes = len(df[df['estado_factura'] == 'EMITIDA']) if 'estado_factura' in df.columns else 0
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="💵 Ventas Totales",
+            value=f"${total_ventas:,.2f}",
+            help="Suma total de todas las facturas"
+        )
+    
+    with col2:
+        st.metric(
+            label="🧾 Total Facturas",
+            value=f"{total_facturas:,}",
+            help="Número total de facturas emitidas"
+        )
+    
+    with col3:
+        st.metric(
+            label="🎯 Ticket Promedio",
+            value=f"${ticket_promedio:,.2f}",
+            help="Promedio de venta por factura"
+        )
+    
+    with col4:
+        st.metric(
+            label="👥 Clientes",
+            value=f"{clientes_unicos:,}",
+            help="Clientes únicos que compraron"
+        )
+    
+    # Segunda fila de métricas
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric(
+            label="✅ Facturas Pagadas",
+            value=f"{facturas_pagadas:,}",
+            delta=f"{(facturas_pagadas/total_facturas*100):.1f}%" if total_facturas > 0 else "0%"
+        )
+    
+    with col2:
+        st.metric(
+            label="⏳ Facturas Pendientes",
+            value=f"{facturas_pendientes:,}",
+            delta=f"{(facturas_pendientes/total_facturas*100):.1f}%" if total_facturas > 0 else "0%"
+        )
+    
+    with col3:
+        venta_maxima = df['total'].max()
+        st.metric(
+            label="📈 Venta Máxima",
+            value=f"${venta_maxima:,.2f}"
+        )
+    
+    with col4:
+        venta_minima = df['total'].min()
+        st.metric(
+            label="📉 Venta Mínima",
+            value=f"${venta_minima:,.2f}"
+        )
+
+
+def mostrar_graficos_evolucion(df: pd.DataFrame, tipo_periodo: str, titulo_periodo: str):
+    """Mostrar gráficos de evolución temporal"""
+    
+    st.markdown("### 📈 Evolución de Ventas")
+    
+    # Agrupar por fecha según el tipo de período
+    if tipo_periodo == "Mensual":
+        # Agrupar por día
+        df_agrupado = df.groupby(df['fecha_emision'].dt.date).agg({
+            'total': 'sum',
+            'id_factura': 'count'
+        }).reset_index()
+        df_agrupado.columns = ['fecha', 'ventas', 'cantidad_facturas']
+        titulo_eje_x = "Día del Mes"
+        
+    elif tipo_periodo == "Trimestral":
+        # Agrupar por semana
+        df['semana'] = df['fecha_emision'].dt.isocalendar().week
+        df_agrupado = df.groupby('semana').agg({
+            'total': 'sum',
+            'id_factura': 'count'
+        }).reset_index()
+        df_agrupado.columns = ['semana', 'ventas', 'cantidad_facturas']
+        df_agrupado['fecha'] = df_agrupado['semana'].apply(lambda x: f"Semana {x}")
+        titulo_eje_x = "Semana del Año"
+        
+    else:  # Anual
+        # Agrupar por mes
+        df['mes'] = df['fecha_emision'].dt.month
+        df_agrupado = df.groupby('mes').agg({
+            'total': 'sum',
+            'id_factura': 'count'
+        }).reset_index()
+        meses_nombres = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+        df_agrupado['fecha'] = df_agrupado['mes'].apply(lambda x: meses_nombres[x-1])
+        df_agrupado.columns = ['mes', 'ventas', 'cantidad_facturas', 'fecha']
+        titulo_eje_x = "Mes"
+    
+    # Crear gráfico de línea de evolución de ventas
+    fig = make_subplots(
+        rows=2, cols=1,
+        subplot_titles=('Evolución de Ventas ($)', 'Cantidad de Facturas'),
+        vertical_spacing=0.15,
+        row_heights=[0.6, 0.4]
+    )
+    
+    # Gráfico de ventas
+    fig.add_trace(
+        go.Scatter(
+            x=df_agrupado['fecha'],
+            y=df_agrupado['ventas'],
+            mode='lines+markers',
+            name='Ventas',
+            line=dict(color='#3498db', width=3),
+            marker=dict(size=8),
+            fill='tonexty',
+            fillcolor='rgba(52, 152, 219, 0.2)'
+        ),
+        row=1, col=1
+    )
+    
+    # Gráfico de cantidad de facturas
+    fig.add_trace(
+        go.Bar(
+            x=df_agrupado['fecha'],
+            y=df_agrupado['cantidad_facturas'],
+            name='Facturas',
+            marker=dict(color='#2ecc71')
+        ),
+        row=2, col=1
+    )
+    
+    fig.update_xaxes(title_text=titulo_eje_x, row=1, col=1)
+    fig.update_xaxes(title_text=titulo_eje_x, row=2, col=1)
+    fig.update_yaxes(title_text="Ventas ($)", row=1, col=1)
+    fig.update_yaxes(title_text="Cantidad", row=2, col=1)
+    
+    fig.update_layout(
+        height=600,
+        showlegend=True,
+        title_text=f"Análisis de Ventas - {titulo_periodo}",
+        hovermode='x unified'
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def mostrar_analisis_estados(df: pd.DataFrame):
+    """Mostrar análisis de facturas por estado"""
+    
+    st.markdown("### 📊 Análisis por Estado de Facturas")
+    
+    if 'estado_factura' not in df.columns:
+        st.info("No hay información de estados disponible")
+        return
+    
+    # Agrupar por estado
+    df_estados = df.groupby('estado_factura').agg({
+        'total': 'sum',
+        'id_factura': 'count'
+    }).reset_index()
+    df_estados.columns = ['estado', 'monto_total', 'cantidad']
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Gráfico de pie para cantidad
+        fig_cantidad = px.pie(
+            df_estados,
+            values='cantidad',
+            names='estado',
+            title='Distribución de Facturas por Estado',
+            color_discrete_sequence=['#2ecc71', '#f39c12', '#e74c3c', '#95a5a6']
+        )
+        st.plotly_chart(fig_cantidad, use_container_width=True)
+    
+    with col2:
+        # Gráfico de pie para montos
+        fig_monto = px.pie(
+            df_estados,
+            values='monto_total',
+            names='estado',
+            title='Distribución de Montos por Estado ($)',
+            color_discrete_sequence=['#3498db', '#9b59b6', '#e67e22', '#34495e']
+        )
+        st.plotly_chart(fig_monto, use_container_width=True)
+    
+    # Tabla resumen
+    st.markdown("#### 📋 Resumen por Estado")
+    
+    df_estados['monto_formateado'] = df_estados['monto_total'].apply(lambda x: f"${x:,.2f}")
+    df_estados['porcentaje_cantidad'] = (df_estados['cantidad'] / df_estados['cantidad'].sum() * 100).round(2)
+    df_estados['porcentaje_monto'] = (df_estados['monto_total'] / df_estados['monto_total'].sum() * 100).round(2)
+    
+    st.dataframe(
+        df_estados[['estado', 'cantidad', 'porcentaje_cantidad', 'monto_formateado', 'porcentaje_monto']],
+        column_config={
+            'estado': 'Estado',
+            'cantidad': 'Cantidad',
+            'porcentaje_cantidad': '% Cantidad',
+            'monto_formateado': 'Monto Total',
+            'porcentaje_monto': '% Monto'
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+
+
+def mostrar_top_clientes_periodo(df: pd.DataFrame):
+    """Mostrar top clientes del período"""
+    
+    st.markdown("### 🏆 Top 10 Clientes del Período")
+    
+    if 'id_cliente' not in df.columns:
+        st.info("No hay información de clientes disponible")
+        return
+    
+    # Agrupar por cliente
+    df_clientes = df.groupby('id_cliente').agg({
+        'total': 'sum',
+        'id_factura': 'count'
+    }).reset_index()
+    df_clientes.columns = ['cliente', 'ventas_total', 'num_compras']
+    df_clientes = df_clientes.sort_values('ventas_total', ascending=False).head(10)
+    
+    # Gráfico de barras horizontales
+    fig = go.Figure()
+    
+    fig.add_trace(go.Bar(
+        y=df_clientes['cliente'].astype(str),
+        x=df_clientes['ventas_total'],
+        orientation='h',
+        marker=dict(
+            color=df_clientes['ventas_total'],
+            colorscale='Viridis',
+            showscale=True
+        ),
+        text=df_clientes['ventas_total'].apply(lambda x: f'${x:,.2f}'),
+        textposition='auto',
+    ))
+    
+    fig.update_layout(
+        title='Top 10 Clientes por Ventas',
+        xaxis_title='Ventas Totales ($)',
+        yaxis_title='Cliente ID',
+        height=400,
+        showlegend=False
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Tabla detallada
+    df_clientes['ticket_promedio'] = df_clientes['ventas_total'] / df_clientes['num_compras']
+    df_clientes['ventas_formateadas'] = df_clientes['ventas_total'].apply(lambda x: f"${x:,.2f}")
+    df_clientes['ticket_formateado'] = df_clientes['ticket_promedio'].apply(lambda x: f"${x:,.2f}")
+    
+    st.dataframe(
+        df_clientes[['cliente', 'num_compras', 'ventas_formateadas', 'ticket_formateado']],
+        column_config={
+            'cliente': 'Cliente ID',
+            'num_compras': '# Compras',
+            'ventas_formateadas': 'Ventas Totales',
+            'ticket_formateado': 'Ticket Promedio'
+        },
+        hide_index=True,
+        use_container_width=True
+    )
 
 def top_productos_clientes(backend_url: str):
     """Análisis de top productos y clientes"""
