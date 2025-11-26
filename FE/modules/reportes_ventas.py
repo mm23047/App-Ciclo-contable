@@ -1255,7 +1255,7 @@ def generar_exportacion(backend_url: str, tipo_reporte: str, formato: str, fecha
                 elif formato.startswith("CSV"):
                     generar_csv(facturas, tipo_reporte, fecha_desde, fecha_hasta)
                 elif formato.startswith("PDF"):
-                    st.info("💡 Exportación PDF en desarrollo")
+                    generar_pdf(facturas, tipo_reporte, fecha_desde, fecha_hasta, incluir_graficos, incluir_resumen)
                 
             else:
                 st.error("Error al obtener datos para exportación")
@@ -1270,44 +1270,65 @@ def generar_excel(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fe
         st.warning("⚠️ No hay datos para exportar")
         return
     
-    # Crear archivo Excel en memoria
-    output = io.BytesIO()
-    
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        # Hoja principal con datos
-        df_facturas = pd.DataFrame(facturas)
+    try:
+        # Crear archivo Excel en memoria
+        output = io.BytesIO()
         
-        # Convertir columna total a float para evitar concatenación de strings
-        if 'total' in df_facturas.columns:
-            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Hoja principal con datos
+            df_facturas = pd.DataFrame(facturas)
+            
+            # Convertir columna total a float para evitar concatenación de strings
+            if 'total' in df_facturas.columns:
+                df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+            
+            # Formatear fecha_emision si existe
+            if 'fecha_emision' in df_facturas.columns:
+                df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision']).dt.strftime('%Y-%m-%d')
+            
+            # Seleccionar columnas principales para exportar
+            columnas_exportar = ['numero_factura', 'fecha_emision', 'id_cliente', 'total', 'estado_factura']
+            columnas_disponibles = [col for col in columnas_exportar if col in df_facturas.columns]
+            
+            if columnas_disponibles:
+                df_export = df_facturas[columnas_disponibles].copy()
+                df_export.to_excel(writer, sheet_name='Ventas Detalladas', index=False)
+            else:
+                df_facturas.to_excel(writer, sheet_name='Ventas Detalladas', index=False)
+            
+            # Hoja resumen
+            total_ventas = float(df_facturas['total'].sum()) if 'total' in df_facturas.columns else 0
+            ticket_promedio = float(df_facturas['total'].mean()) if 'total' in df_facturas.columns else 0
+            
+            resumen_data = {
+                'Métrica': ['Total Facturas', 'Ventas Totales', 'Ticket Promedio', 'Período'],
+                'Valor': [
+                    len(facturas),
+                    f"${total_ventas:,.2f}",
+                    f"${ticket_promedio:,.2f}",
+                    f"{fecha_desde} a {fecha_hasta}"
+                ]
+            }
+            
+            df_resumen = pd.DataFrame(resumen_data)
+            df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
         
-        df_facturas.to_excel(writer, sheet_name='Ventas Detalladas', index=False)
+        output.seek(0)
         
-        # Hoja resumen
-        resumen_data = {
-            'Métrica': ['Total Facturas', 'Ventas Totales', 'Ticket Promedio', 'Período'],
-            'Valor': [
-                len(facturas),
-                f"${float(df_facturas['total'].sum()):,.2f}",
-                f"${float(df_facturas['total'].mean()):,.2f}",
-                f"{fecha_desde} a {fecha_hasta}"
-            ]
-        }
+        # Botón de descarga
+        st.download_button(
+            label="📥 Descargar Reporte Excel",
+            data=output.getvalue(),
+            file_name=f"reporte_ventas_{fecha_desde}_{fecha_hasta}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            use_container_width=True
+        )
         
-        df_resumen = pd.DataFrame(resumen_data)
-        df_resumen.to_excel(writer, sheet_name='Resumen', index=False)
-    
-    output.seek(0)
-    
-    # Botón de descarga
-    st.download_button(
-        label="📥 Descargar Reporte Excel",
-        data=output.getvalue(),
-        file_name=f"reporte_ventas_{fecha_desde}_{fecha_hasta}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    
-    st.success("✅ Archivo Excel generado exitosamente!")
+        st.success("✅ Archivo Excel generado exitosamente!")
+        
+    except Exception as e:
+        st.error(f"❌ Error al generar archivo Excel: {e}")
 
 def generar_csv(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fecha_hasta: date):
     """Generar archivo CSV"""
@@ -1316,15 +1337,232 @@ def generar_csv(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fech
         st.warning("⚠️ No hay datos para exportar")
         return
     
-    df_facturas = pd.DataFrame(facturas)
-    csv_data = df_facturas.to_csv(index=False)
+    try:
+        df_facturas = pd.DataFrame(facturas)
+        
+        # Convertir columna total a float
+        if 'total' in df_facturas.columns:
+            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+        
+        # Formatear fecha_emision si existe
+        if 'fecha_emision' in df_facturas.columns:
+            df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision']).dt.strftime('%Y-%m-%d')
+        
+        csv_data = df_facturas.to_csv(index=False)
+        
+        # Botón de descarga
+        st.download_button(
+            label="📥 Descargar Reporte CSV",
+            data=csv_data,
+            file_name=f"reporte_ventas_{fecha_desde}_{fecha_hasta}.csv",
+            mime="text/csv",
+            type="primary",
+            use_container_width=True
+        )
+        
+        st.success("✅ Archivo CSV generado exitosamente!")
+        
+    except Exception as e:
+        st.error(f"❌ Error al generar archivo CSV: {e}")
+
+
+def generar_pdf(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fecha_hasta: date, incluir_graficos: bool, incluir_resumen: bool):
+    """Generar archivo PDF con reportlab"""
     
-    # Botón de descarga
-    st.download_button(
-        label="📥 Descargar Reporte CSV",
-        data=csv_data,
-        file_name=f"reporte_ventas_{fecha_desde}_{fecha_hasta}.csv",
-        mime="text/csv"
-    )
+    if not facturas:
+        st.warning("⚠️ No hay datos para exportar")
+        return
     
-    st.success("✅ Archivo CSV generado exitosamente!")
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+        from reportlab.platypus import Image as RLImage
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+        
+        # Crear archivo PDF en memoria
+        buffer = io.BytesIO()
+        
+        # Configurar documento
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=0.5*inch,
+            leftMargin=0.5*inch,
+            topMargin=0.75*inch,
+            bottomMargin=0.5*inch
+        )
+        
+        # Preparar contenido
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Estilos personalizados
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=30,
+            alignment=TA_CENTER,
+            fontName='Helvetica-Bold'
+        )
+        
+        subtitle_style = ParagraphStyle(
+            'CustomSubtitle',
+            parent=styles['Heading2'],
+            fontSize=14,
+            textColor=colors.HexColor('#34495e'),
+            spaceAfter=12,
+            alignment=TA_CENTER
+        )
+        
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceAfter=12,
+            spaceBefore=12,
+            fontName='Helvetica-Bold'
+        )
+        
+        # Título del reporte
+        story.append(Paragraph("📊 REPORTE DE VENTAS", title_style))
+        story.append(Paragraph(f"{tipo_reporte}", subtitle_style))
+        story.append(Paragraph(f"Período: {fecha_desde.strftime('%d/%m/%Y')} - {fecha_hasta.strftime('%d/%m/%Y')}", subtitle_style))
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Preparar datos
+        df_facturas = pd.DataFrame(facturas)
+        
+        # Convertir columna total a float
+        if 'total' in df_facturas.columns:
+            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+        
+        # Resumen ejecutivo si está habilitado
+        if incluir_resumen:
+            story.append(Paragraph("📈 RESUMEN EJECUTIVO", heading_style))
+            
+            total_ventas = float(df_facturas['total'].sum()) if 'total' in df_facturas.columns else 0
+            total_facturas = len(facturas)
+            ticket_promedio = float(df_facturas['total'].mean()) if 'total' in df_facturas.columns else 0
+            clientes_unicos = df_facturas['id_cliente'].nunique() if 'id_cliente' in df_facturas.columns else 0
+            
+            # Tabla de resumen
+            resumen_data = [
+                ['Métrica', 'Valor'],
+                ['Total de Facturas', f'{total_facturas:,}'],
+                ['Ventas Totales', f'${total_ventas:,.2f}'],
+                ['Ticket Promedio', f'${ticket_promedio:,.2f}'],
+                ['Clientes Únicos', f'{clientes_unicos:,}']
+            ]
+            
+            resumen_table = Table(resumen_data, colWidths=[3*inch, 3*inch])
+            resumen_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498db')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#ecf0f1')])
+            ]))
+            
+            story.append(resumen_table)
+            story.append(Spacer(1, 0.3*inch))
+        
+        # Detalle de ventas
+        story.append(Paragraph("📋 DETALLE DE VENTAS", heading_style))
+        
+        # Preparar datos para la tabla
+        tabla_data = [['#', 'Factura', 'Fecha', 'Cliente', 'Total', 'Estado']]
+        
+        for idx, factura in enumerate(facturas[:50], 1):  # Limitar a 50 primeras facturas
+            numero = factura.get('numero_factura', 'N/A')
+            fecha = factura.get('fecha_emision', '')[:10] if factura.get('fecha_emision') else 'N/A'
+            cliente = str(factura.get('id_cliente', 'N/A'))
+            total = float(factura.get('total', 0))
+            estado = factura.get('estado_factura', 'N/A')
+            
+            tabla_data.append([
+                str(idx),
+                str(numero),
+                fecha,
+                cliente,
+                f'${total:,.2f}',
+                estado
+            ])
+        
+        # Crear tabla de detalles
+        detalle_table = Table(tabla_data, colWidths=[0.4*inch, 1.2*inch, 1*inch, 1*inch, 1.2*inch, 1.2*inch])
+        detalle_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495e')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8f9fa')]),
+            ('ALIGN', (4, 1), (4, -1), 'RIGHT'),
+        ]))
+        
+        story.append(detalle_table)
+        
+        # Nota si hay más facturas
+        if len(facturas) > 50:
+            story.append(Spacer(1, 0.2*inch))
+            nota = Paragraph(
+                f"<i>Nota: Se muestran las primeras 50 facturas de un total de {len(facturas)}. "
+                f"Para ver el detalle completo, use la exportación a Excel.</i>",
+                styles['Italic']
+            )
+            story.append(nota)
+        
+        # Pie de página con fecha de generación
+        story.append(Spacer(1, 0.5*inch))
+        footer = Paragraph(
+            f"<i>Reporte generado el {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>",
+            ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.grey, alignment=TA_CENTER)
+        )
+        story.append(footer)
+        
+        # Construir PDF
+        doc.build(story)
+        
+        # Obtener datos del buffer
+        buffer.seek(0)
+        pdf_data = buffer.getvalue()
+        
+        # Botón de descarga
+        st.download_button(
+            label="📥 Descargar Reporte PDF",
+            data=pdf_data,
+            file_name=f"reporte_ventas_{fecha_desde}_{fecha_hasta}.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True
+        )
+        
+        st.success("✅ Archivo PDF generado exitosamente!")
+        st.info(f"📊 Total de facturas en el reporte: {min(len(facturas), 50)} de {len(facturas)}")
+        
+    except ImportError as e:
+        st.error("❌ Error: La librería reportlab no está instalada correctamente")
+        st.info("💡 Contacte al administrador del sistema")
+    except Exception as e:
+        st.error(f"❌ Error al generar archivo PDF: {e}")
+
