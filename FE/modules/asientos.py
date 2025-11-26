@@ -122,7 +122,7 @@ def create_asiento_form(backend_url: str, transaction_id: int, accounts: List[Di
             st.markdown("**Tipo de Movimiento:**")
             amount_type = st.radio(
                 "Selecciona el tipo",
-                ["🟢 Débito (Debe)", "🔴 Crédito (Haber)"],
+                ["Débito (Debe)", "Crédito (Haber)"],
                 help="📘 Débito: Aumenta activos/gastos | Disminuye pasivos/ingresos\n📕 Crédito: Disminuye activos/gastos | Aumenta pasivos/ingresos",
                 label_visibility="collapsed"
             )
@@ -163,14 +163,23 @@ def create_asiento_form(backend_url: str, transaction_id: int, accounts: List[Di
             submitted = st.form_submit_button("✅ Crear Asiento", type="primary", use_container_width=True)
         
         if submitted:
+            # Determine debe/haber based on selection
+            es_debito = "Débito" in amount_type
+            
             # Prepare request data
             asiento_data = {
                 "id_transaccion": transaction_id,
                 "id_cuenta": selected_account_id,
-                "debe": float(amount) if amount_type.startswith("Débito") else 0.00,
-                "haber": float(amount) if amount_type.startswith("Crédito") else 0.00,
+                "debe": float(amount) if es_debito else 0.0,
+                "haber": 0.0 if es_debito else float(amount),
                 "descripcion_asiento": descripcion_asiento if descripcion_asiento else None
             }
+            
+            # Debug: mostrar datos enviados
+            with st.expander("🔍 Ver datos a enviar (debug)", expanded=False):
+                st.json(asiento_data)
+                st.info(f"Tipo seleccionado: {amount_type}")
+                st.info(f"Es débito: {es_debito}")
             
             try:
                 response = requests.post(

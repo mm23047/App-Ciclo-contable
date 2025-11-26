@@ -8,6 +8,38 @@ import pandas as pd
 from datetime import datetime, date
 from typing import Dict, Any, List
 
+def obtener_proximo_numero_partida(backend_url: str) -> str:
+    """Obtener el próximo número disponible para partida de ajuste"""
+    try:
+        response = requests.get(f"{backend_url}/api/partidas-ajuste")
+        if response.status_code == 200:
+            partidas = response.json()
+            if partidas:
+                # Obtener todos los números que son numéricos
+                numeros = []
+                for p in partidas:
+                    try:
+                        num_str = p.get('numero_partida', '')
+                        # Intentar extraer el número si tiene prefijo
+                        if '-' in num_str:
+                            num_str = num_str.split('-')[-1]
+                        num = int(num_str)
+                        numeros.append(num)
+                    except:
+                        pass
+                
+                if numeros:
+                    proximo = max(numeros) + 1
+                    return f"PA-{proximo:04d}"
+                else:
+                    return "PA-0001"
+            else:
+                return "PA-0001"
+        else:
+            return "PA-0001"
+    except:
+        return "PA-0001"
+
 def render_page(backend_url: str):
     """Renderizar página de partidas de ajuste"""
     
@@ -42,6 +74,9 @@ def crear_partida_ajuste(backend_url: str):
         st.warning("⚠️ No hay períodos configurados. Configura un período primero.")
         return
     
+    # Obtener número sugerido para nueva partida
+    numero_sugerido = obtener_proximo_numero_partida(backend_url)
+    
     with st.form("form_crear_ajuste", clear_on_submit=False):
         col1, col2 = st.columns(2)
         
@@ -60,12 +95,18 @@ def crear_partida_ajuste(backend_url: str):
                 help="Fecha de registro del ajuste"
             )
             
-            # Número de partida
-            numero_partida = st.text_input(
-                "Número de partida:",
-                max_chars=20,
-                help="Número único de la partida de ajuste (máximo 20 caracteres)"
-            )
+            # Número de partida con sugerencia
+            col_num1, col_num2 = st.columns([3, 1])
+            with col_num1:
+                numero_partida = st.text_input(
+                    "Número de partida:",
+                    value=numero_sugerido,
+                    max_chars=20,
+                    help="Número único de la partida de ajuste (máximo 20 caracteres)"
+                )
+            with col_num2:
+                if st.form_submit_button("🔄", help="Generar nuevo número"):
+                    st.rerun()
             
             # Tipo de ajuste
             tipos_ajuste_display = {

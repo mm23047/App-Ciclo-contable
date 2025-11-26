@@ -95,11 +95,14 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
         response_saldos = requests.get(f"{backend_url}/api/balance-inicial/periodo/{periodo['id_periodo']}")
         saldos_existentes = {}
         if response_saldos.status_code == 200:
-            saldos_data = response_saldos.json()
-            saldos_existentes = {
-                s['id_cuenta']: s['saldo_inicial'] 
-                for s in saldos_data
-            }
+            try:
+                saldos_data = response_saldos.json()
+                saldos_existentes = {
+                    s['id_cuenta']: s['saldo_inicial'] 
+                    for s in saldos_data
+                }
+            except:
+                saldos_existentes = {}
     except:
         saldos_existentes = {}
     
@@ -201,11 +204,16 @@ def configurar_saldo_individual(
             st.success("✅ Saldo inicial configurado exitosamente!")
             st.rerun()
         else:
-            error_detail = response.json().get('detail', 'Error desconocido')
+            try:
+                error_detail = response.json().get('detail', 'Error desconocido')
+            except:
+                error_detail = response.text if response.text else f'Error HTTP {response.status_code}'
             st.error(f"❌ Error al configurar saldo: {error_detail}")
             
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Error de conexión: {e}")
+    except Exception as e:
+        st.error(f"❌ Error inesperado: {e}")
 
 def carga_masiva_saldos(backend_url: str, periodo: Dict[str, Any]):
     """Carga masiva de saldos iniciales"""
@@ -276,8 +284,12 @@ def generar_plantilla_saldos(backend_url: str):
         response = requests.get(f"{backend_url}/api/catalogo-cuentas")
         
         if response.status_code == 200:
-            cuentas = response.json()
-            cuentas_movimientos = [c for c in cuentas if c['acepta_movimientos']]
+            try:
+                cuentas = response.json()
+                cuentas_movimientos = [c for c in cuentas if c['acepta_movimientos']]
+            except:
+                st.error("❌ Error al procesar cuentas del catálogo")
+                return None
             
             # Crear DataFrame de plantilla
             plantilla_data = []
@@ -461,7 +473,11 @@ def procesar_carga_masiva(backend_url: str, id_periodo: int, df: pd.DataFrame):
                             resultados["exitosos"] += 1
                         else:
                             resultados["errores"] += 1
-                            resultados["detalles_errores"].append(f"Fila {index+1}: {response.json().get('detail', 'Error')}")
+                            try:
+                                error_msg = response.json().get('detail', 'Error')
+                            except:
+                                error_msg = f'Error HTTP {response.status_code}'
+                            resultados["detalles_errores"].append(f"Fila {index+1}: {error_msg}")
                     else:
                         resultados["errores"] += 1
                         resultados["detalles_errores"].append(f"Fila {index+1}: Cuenta '{codigo_cuenta}' no encontrada o saldo cero")
@@ -517,10 +533,13 @@ def procesar_saldos_multiples(backend_url: str, id_periodo: int, saldos: List[Di
                         resultados["exitosos"] += 1
                     else:
                         resultados["errores"] += 1
+                        try:
+                            error_msg = response.json().get('detail', 'Error')
+                        except:
+                            error_msg = f'Error HTTP {response.status_code}'
                         resultados["detalles_errores"].append(
-                            f"{saldo['codigo_cuenta']}: {response.json().get('detail', 'Error')}"
+                            f"{saldo['codigo_cuenta']}: {error_msg}"
                         )
-                        
                 except Exception as e:
                     resultados["errores"] += 1
                     resultados["detalles_errores"].append(f"{saldo['codigo_cuenta']}: {str(e)}")
@@ -595,7 +614,11 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
             response = requests.get(f"{backend_url}/api/balance-inicial/periodo/{id_periodo}", params=params)
         
         if response.status_code == 200:
-            saldos = response.json()
+            try:
+                saldos = response.json()
+            except:
+                st.error("❌ Error al procesar respuesta del servidor")
+                return
             
             if saldos:
                 # Convertir a DataFrame
@@ -742,7 +765,11 @@ def ejecutar_validacion_balance(backend_url: str, id_periodo: int):
             response = requests.get(f"{backend_url}/api/balance-inicial/resumen/{id_periodo}")
         
         if response.status_code == 200:
-            resumen = response.json()
+            try:
+                resumen = response.json()
+            except:
+                st.error("❌ Error al procesar respuesta de validación")
+                return
             
             st.markdown("### 📊 Resultados de la Validación")
             
