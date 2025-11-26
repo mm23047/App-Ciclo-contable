@@ -180,34 +180,42 @@ def crear_nueva_factura(backend_url: str):
             cantidad = st.number_input("Cantidad:", min_value=0.01, value=1.0, step=0.01, key="cant_factura")
         
         with col3:
-            descuento = st.number_input("Descuento %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")
+            # Obtener precio del producto seleccionado
+            precio_unitario = 0.0
+            if producto_sel:
+                codigo_prod = producto_sel.split(" - ")[0]
+                prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
+                if prod_obj:
+                    precio_unitario = float(prod_obj.get('precio_venta', 0))
+            
+            precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key="precio_factura")
         
-        # Botón de agregar
-        col_btn1, col_btn2 = st.columns([3, 1])
-        with col_btn2:
-            if st.button("➕ Agregar Producto", key="add_prod_factura", use_container_width=True, type="primary"):
-                if producto_sel and cantidad > 0:
+        with col4:
+            descuento = st.number_input("Desc. %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")
+        
+        with col5:
+            subtotal = cantidad * precio * (1 - descuento/100)
+            st.metric("Subtotal", f"${subtotal:,.2f}")
+        
+        with col6:
+            st.write("")  # Espaciado
+            if st.button("➕ Agregar", key="add_prod_factura"):
+                if producto_sel and cantidad > 0 and precio > 0:
                     codigo_prod = producto_sel.split(" - ")[0]
                     prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                     
-                    if prod_obj:
-                        precio_unitario = float(prod_obj.get('precio_venta', 0))
-                        subtotal = cantidad * precio_unitario * (1 - descuento/100)
-                        
-                        nuevo_item = {
-                            'id_producto': prod_obj['id_producto'],
-                            'codigo_producto': codigo_prod,
-                            'nombre_producto': prod_obj['nombre'],
-                            'cantidad': cantidad,
-                            'precio_unitario': precio_unitario,
-                            'descuento_porcentaje': descuento,
-                            'subtotal': subtotal
-                        }
-                        
-                        st.session_state.productos_factura.append(nuevo_item)
-                        st.rerun()
-                else:
-                    st.error("⚠️ Selecciona un producto y una cantidad válida")
+                    nuevo_item = {
+                        'id_producto': prod_obj['id_producto'],
+                        'codigo_producto': codigo_prod,
+                        'nombre_producto': prod_obj['nombre'],
+                        'cantidad': cantidad,
+                        'precio_unitario': precio,
+                        'descuento_porcentaje': descuento,
+                        'subtotal': subtotal
+                    }
+                    
+                    st.session_state.productos_factura.append(nuevo_item)
+                    st.rerun()
     
     # Mostrar productos agregados
     if st.session_state.productos_factura:
