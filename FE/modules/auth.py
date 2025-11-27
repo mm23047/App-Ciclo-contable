@@ -169,6 +169,16 @@ def render_login_page(backend_url: str):
             else:
                 st.warning("⚠️ Por favor complete todos los campos")
     
+    # Credenciales de demostración
+    st.markdown("""
+    <div class="demo-credentials">
+        <h4>🔑 Credenciales de Demostración</h4>
+        <p><strong>Admin:</strong> admin / admin123</p>
+        <p><strong>Contador:</strong> contador / contador123</p>
+        <p><strong>Usuario:</strong> usuario / usuario123</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
     # Características del sistema
     st.markdown("""
     <div class="feature-list">
@@ -211,6 +221,10 @@ def authenticate_user(backend_url: str, username: str, password: str) -> bool:
     Autenticar usuario contra el backend.
     Por ahora usa autenticación local, pero puede extenderse al backend.
     """
+    
+    # Limpiar espacios en blanco
+    username = username.strip()
+    password = password.strip()
     
     # Usuarios de demostración (temporal - debería venir del backend)
     demo_users = {

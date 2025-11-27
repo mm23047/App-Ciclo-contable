@@ -366,15 +366,24 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
         if 'stock_actual' in df_display.columns and 'stock_minimo' in df_display.columns:
             def formato_stock(row):
                 try:
-                    stock = float(row.get('stock_actual', 0))
-                    minimo = float(row.get('stock_minimo', 0))
+                    stock = float(row['stock_actual']) if row['stock_actual'] is not None else 0.0
+                    minimo = float(row['stock_minimo']) if row['stock_minimo'] is not None else 0.0
                     if stock <= minimo and minimo > 0:
                         return f"⚠️ {stock:.0f}"
                     return f"{stock:.0f}"
-                except (ValueError, TypeError):
+                except (ValueError, TypeError, KeyError):
                     return "0"
             
             df_display['stock_fmt'] = df_display.apply(formato_stock, axis=1)
+        elif 'stock_actual' in df_display.columns:
+            # Si solo existe stock_actual sin stock_minimo
+            df_display['stock_fmt'] = df_display['stock_actual'].apply(
+                lambda x: f"{float(x):.0f}" if x is not None else "0"
+            )
+        
+        # Normalizar nombre de columna categoria
+        if 'categoria_producto' in df_display.columns and 'categoria' not in df_display.columns:
+            df_display['categoria'] = df_display['categoria_producto']
         
         # Seleccionar columnas principales
         columnas_principales = [
@@ -402,7 +411,49 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
             
             df_tabla.columns = [nombres_columnas.get(col, col) for col in df_tabla.columns]
             
-            # Mostrar tabla con selección
+            # Preparar dataframe editable con stock numérico
+            df_editable = df_display[['id_producto', 'codigo_producto', 'nombre', 'tipo_producto', 
+                                       'categoria', 'precio_venta', 'stock_actual', 'stock_minimo', 
+                                       'stock_maximo', 'estado_producto']].copy() if all(col in df_display.columns for col in ['id_producto', 'stock_actual']) else None
+            
+            # Mostrar tabla editable si tiene columnas de stock
+            if df_editable is not None and 'stock_actual' in df_editable.columns:
+                st.markdown("##### 📝 Editar Stock Directamente en la Tabla")
+                st.caption("Modifique los valores de stock y presione Enter para guardar")
+                
+                edited_df = st.data_editor(
+                    df_editable,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "id_producto": st.column_config.NumberColumn("ID", disabled=True),
+                        "codigo_producto": st.column_config.TextColumn("Código", disabled=True),
+                        "nombre": st.column_config.TextColumn("Nombre", disabled=True),
+                        "tipo_producto": st.column_config.TextColumn("Tipo", disabled=True),
+                        "categoria": st.column_config.TextColumn("Categoría", disabled=True),
+                        "precio_venta": st.column_config.NumberColumn("Precio", disabled=True, format="$%.2f"),
+                        "stock_actual": st.column_config.NumberColumn("Stock Actual", min_value=0, step=1, format="%.0f"),
+                        "stock_minimo": st.column_config.NumberColumn("Stock Mínimo", min_value=0, step=1, format="%.0f"),
+                        "stock_maximo": st.column_config.NumberColumn("Stock Máximo", min_value=0, step=1, format="%.0f"),
+                        "estado_producto": st.column_config.TextColumn("Estado", disabled=True)
+                    },
+                    disabled=["id_producto", "codigo_producto", "nombre", "tipo_producto", "categoria", "precio_venta", "estado_producto"],
+                    key="editor_productos"
+                )
+                
+                # Detectar cambios y actualizar
+                if not edited_df.equals(df_editable):
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        if st.button("💾 Guardar Cambios de Stock", type="primary"):
+                            actualizar_stocks_masivo(backend_url, df_editable, edited_df)
+                    with col2:
+                        st.info("⚠️ Hay cambios sin guardar. Presione 'Guardar Cambios de Stock' para aplicarlos.")
+                
+                st.markdown("---")
+                st.markdown("##### 📋 Vista de Solo Lectura")
+            
+            # Mostrar tabla de solo lectura
             event = st.dataframe(
                 df_tabla,
                 use_container_width=True,
@@ -834,6 +885,66 @@ def actualizar_producto_backend(backend_url: str, id_producto: int, datos: Dict[
             
     except Exception as e:
         st.error(f"❌ Error al actualizar producto: {e}")
+
+def actualizar_stocks_masivo(backend_url: str, df_original: pd.DataFrame, df_editado: pd.DataFrame):
+    """Actualizar stocks de múltiples productos que fueron editados"""
+    
+    try:
+        cambios = []
+        errores = []
+        
+        # Detectar cambios fila por fila
+        for idx in df_editado.index:
+            id_producto = int(df_editado.loc[idx, 'id_producto'])
+            
+            # Verificar si hubo cambios en stock
+            stock_actual_original = float(df_original.loc[idx, 'stock_actual']) if df_original.loc[idx, 'stock_actual'] is not None else 0
+            stock_minimo_original = float(df_original.loc[idx, 'stock_minimo']) if df_original.loc[idx, 'stock_minimo'] is not None else 0
+            stock_maximo_original = float(df_original.loc[idx, 'stock_maximo']) if df_original.loc[idx, 'stock_maximo'] is not None else 0
+            
+            stock_actual_nuevo = float(df_editado.loc[idx, 'stock_actual']) if df_editado.loc[idx, 'stock_actual'] is not None else 0
+            stock_minimo_nuevo = float(df_editado.loc[idx, 'stock_minimo']) if df_editado.loc[idx, 'stock_minimo'] is not None else 0
+            stock_maximo_nuevo = float(df_editado.loc[idx, 'stock_maximo']) if df_editado.loc[idx, 'stock_maximo'] is not None else 0
+            
+            if (stock_actual_original != stock_actual_nuevo or 
+                stock_minimo_original != stock_minimo_nuevo or 
+                stock_maximo_original != stock_maximo_nuevo):
+                
+                datos_actualizacion = {
+                    "stock_actual": stock_actual_nuevo,
+                    "stock_minimo": stock_minimo_nuevo,
+                    "stock_maximo": stock_maximo_nuevo
+                }
+                
+                response = requests.put(f"{backend_url}/api/productos/{id_producto}", json=datos_actualizacion)
+                
+                if response.status_code == 200:
+                    nombre_producto = df_editado.loc[idx, 'nombre']
+                    cambios.append(f"✅ {nombre_producto}: Stock actualizado")
+                else:
+                    nombre_producto = df_editado.loc[idx, 'nombre']
+                    error_detail = response.json().get('detail', 'Error desconocido')
+                    errores.append(f"❌ {nombre_producto}: {error_detail}")
+        
+        # Mostrar resultados
+        if cambios:
+            st.success(f"✅ {len(cambios)} producto(s) actualizado(s) exitosamente")
+            with st.expander("Ver detalles de actualización"):
+                for cambio in cambios:
+                    st.write(cambio)
+            st.rerun()
+        
+        if errores:
+            st.error(f"❌ {len(errores)} error(es) al actualizar")
+            with st.expander("Ver errores"):
+                for error in errores:
+                    st.write(error)
+        
+        if not cambios and not errores:
+            st.info("ℹ️ No se detectaron cambios en los stocks")
+            
+    except Exception as e:
+        st.error(f"❌ Error al actualizar stocks: {e}")
 
 def cambiar_estado_producto(backend_url: str, id_producto: int, nuevo_estado_producto: str):
     """Cambiar estado del producto (ACTIVO/INACTIVO/DESCONTINUADO)"""

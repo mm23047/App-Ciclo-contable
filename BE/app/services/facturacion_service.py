@@ -216,7 +216,7 @@ def crear_factura_completa(
         db.add(db_factura)
         db.flush()  # Para obtener el ID
         
-        # Crear detalles de factura
+        # Crear detalles de factura y actualizar stock
         for detalle_calc in detalles_calculados:
             db_detalle = DetalleFactura(
                 id_factura=db_factura.id_factura,
@@ -231,6 +231,21 @@ def crear_factura_completa(
                 descripcion_personalizada=detalle_calc['detalle_data'].descripcion_personalizada
             )
             db.add(db_detalle)
+            
+            # Actualizar stock del producto si maneja inventario
+            producto = productos_map[detalle_calc['detalle_data'].id_producto]
+            if producto.maneja_inventario and producto.tipo_producto == 'PRODUCTO':
+                cantidad_vendida = Decimal(str(detalle_calc['detalle_data'].cantidad))
+                nuevo_stock = Decimal(str(producto.stock_actual)) - cantidad_vendida
+                
+                # Validar que no quede stock negativo
+                if nuevo_stock < 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Stock insuficiente para producto '{producto.nombre}'. Stock disponible: {producto.stock_actual}, cantidad solicitada: {cantidad_vendida}"
+                    )
+                
+                producto.stock_actual = float(nuevo_stock)
         
         # Incrementar número actual de factura en la configuración
         if not factura_data.numero_factura:  # Solo si se generó automáticamente
@@ -378,7 +393,7 @@ def obtener_reporte_ventas_periodo(
     }
 
 def anular_factura(db: Session, factura_id: int, motivo: str, usuario: str) -> Factura:
-    """Anular una factura y sus asientos contables"""
+    """Anular una factura, restaurar stock y sus asientos contables"""
     
     factura = db.query(Factura).filter(Factura.id_factura == factura_id).first()
     if not factura:
@@ -394,6 +409,21 @@ def anular_factura(db: Session, factura_id: int, motivo: str, usuario: str) -> F
         )
     
     try:
+        # Restaurar stock de los productos vendidos
+        detalles = db.query(DetalleFactura).filter(
+            DetalleFactura.id_factura == factura_id
+        ).all()
+        
+        for detalle in detalles:
+            producto = db.query(Producto).filter(
+                Producto.id_producto == detalle.id_producto
+            ).first()
+            
+            if producto and producto.maneja_inventario and producto.tipo_producto == 'PRODUCTO':
+                # Devolver la cantidad al stock
+                cantidad_devolver = Decimal(str(detalle.cantidad))
+                producto.stock_actual = float(Decimal(str(producto.stock_actual)) + cantidad_devolver)
+        
         # Cambiar estado de factura
         factura.estado_factura = 'ANULADA'
         factura.observaciones = f"{factura.observaciones or ''}\nANULADA: {motivo}".strip()
