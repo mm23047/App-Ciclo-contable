@@ -5,6 +5,7 @@ Sistema contable integral con 9 módulos especializados.
 import streamlit as st
 import os
 from modules import (
+    auth,
     transacciones, 
     asientos, 
     reportes,
@@ -33,8 +34,16 @@ st.set_page_config(
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 def main():
+    # Verificar autenticación
+    if not auth.check_authentication():
+        auth.render_login_page(BACKEND_URL)
+        return
+    
     st.sidebar.title("📊 Sistema Contable Integral")
     st.sidebar.markdown("---")
+    
+    # Mostrar perfil del usuario
+    auth.render_user_profile()
     
     # Menú de navegación organizado por categorías
     st.sidebar.markdown("### 🏗️ **CONFIGURACIÓN**")
