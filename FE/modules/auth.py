@@ -169,18 +169,6 @@ def render_login_page(backend_url: str):
             else:
                 st.warning("⚠️ Por favor complete todos los campos")
     
-    # Credenciales de demostración
-    st.markdown("""
-    <div class="demo-credentials">
-        <h4>🎯 Credenciales de Demostración</h4>
-        <p><strong>Usuario:</strong> admin</p>
-        <p><strong>Contraseña:</strong> admin123</p>
-        <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d;">
-            <i>💡 Use estas credenciales para acceso rápido al sistema</i>
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
     # Características del sistema
     st.markdown("""
     <div class="feature-list">
