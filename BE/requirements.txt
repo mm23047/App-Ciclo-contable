@@ -3,8 +3,11 @@ uvicorn[standard]
 sqlalchemy
 psycopg2-binary
 pydantic
+pydantic[email]
 python-dotenv
 pandas
 jinja2
 openpyxl
 requests
+bcrypt
+pyjwt

@@ -12,6 +12,7 @@ from .balance_inicial import BalanceInicial
 from .estados_financieros import ConfiguracionEstadosFinancieros, EstadosFinancierosHistorico
 from .facturacion import Cliente, Producto, Factura, DetalleFactura, ResumenVentasDiarias
 from .configuracion_categoria import ConfiguracionContableCategoria
+from .usuario import Usuario
 
 __all__ = [
     "CatalogoCuentas",
@@ -31,5 +32,6 @@ __all__ = [
     "Factura",
     "DetalleFactura",
     "ResumenVentasDiarias",
-    "ConfiguracionContableCategoria"
+    "ConfiguracionContableCategoria",
+    "Usuario"
 ]
