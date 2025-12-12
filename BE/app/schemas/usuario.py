@@ -11,7 +11,7 @@ class UsuarioBase(BaseModel):
     """Schema base para usuario"""
     username: str = Field(..., min_length=3, max_length=50, description="Nombre de usuario único")
     email: EmailStr = Field(..., description="Correo electrónico válido")
-    nombre_completo: Optional[str] = Field(None, max_length=100, description="Nombre completo del usuario")
+    nombre_completo: str = Field(..., min_length=1, max_length=100, description="Nombre completo del usuario")
     rol: str = Field(default='Usuario', description="Rol del usuario en el sistema")
     
     @validator('rol')

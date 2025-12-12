@@ -35,7 +35,7 @@ class Usuario(Base):
     password_hash = Column(String(255), nullable=False)
     
     # Información personal
-    nombre_completo = Column(String(100))
+    nombre_completo = Column(String(100), nullable=False)
     
     # Control de acceso
     rol = Column(
