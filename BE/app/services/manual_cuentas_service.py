@@ -12,6 +12,8 @@ from typing import List, Optional
 
 def create_manual_cuenta(db: Session, manual_data: ManualCuentasCreate) -> ManualCuentas:
     """Crear un nuevo manual de cuenta"""
+    from sqlalchemy.orm import joinedload
+    
     # Validar que la cuenta existe
     cuenta = db.query(CatalogoCuentas).filter(
         CatalogoCuentas.id_cuenta == manual_data.id_cuenta
@@ -37,6 +39,12 @@ def create_manual_cuenta(db: Session, manual_data: ManualCuentasCreate) -> Manua
         db.add(db_manual)
         db.commit()
         db.refresh(db_manual)
+        
+        # Recargar con la relación
+        db_manual = db.query(ManualCuentas).options(
+            joinedload(ManualCuentas.cuenta)
+        ).filter(ManualCuentas.id_manual == db_manual.id_manual).first()
+        
         return db_manual
     except IntegrityError:
         db.rollback()
@@ -47,7 +55,11 @@ def create_manual_cuenta(db: Session, manual_data: ManualCuentasCreate) -> Manua
 
 def get_manual_cuenta(db: Session, manual_id: int) -> Optional[ManualCuentas]:
     """Obtener un manual de cuenta específico por ID"""
-    manual = db.query(ManualCuentas).filter(ManualCuentas.id_manual == manual_id).first()
+    from sqlalchemy.orm import joinedload
+    
+    manual = db.query(ManualCuentas).options(
+        joinedload(ManualCuentas.cuenta)
+    ).filter(ManualCuentas.id_manual == manual_id).first()
     if not manual:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -57,11 +69,52 @@ def get_manual_cuenta(db: Session, manual_id: int) -> Optional[ManualCuentas]:
 
 def get_manual_por_cuenta(db: Session, cuenta_id: int) -> Optional[ManualCuentas]:
     """Obtener manual por ID de cuenta"""
-    return db.query(ManualCuentas).filter(ManualCuentas.id_cuenta == cuenta_id).first()
+    from sqlalchemy.orm import joinedload
+    
+    return db.query(ManualCuentas).options(
+        joinedload(ManualCuentas.cuenta)
+    ).filter(ManualCuentas.id_cuenta == cuenta_id).first()
 
-def get_manuales_cuentas(db: Session, skip: int = 0, limit: int = 100) -> List[ManualCuentas]:
-    """Obtener todos los manuales con paginación"""
-    return db.query(ManualCuentas).offset(skip).limit(limit).all()
+def get_manuales_cuentas(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100,
+    texto_busqueda: Optional[str] = None,
+    naturaleza_cuenta: Optional[str] = None,
+    clasificacion: Optional[str] = None,
+    solo_con_ejemplos: Optional[bool] = None
+) -> List[ManualCuentas]:
+    """Obtener todos los manuales con paginación y filtros"""
+    from sqlalchemy.orm import joinedload
+    
+    query = db.query(ManualCuentas).options(joinedload(ManualCuentas.cuenta))
+    
+    # Aplicar filtros
+    if texto_busqueda:
+        # Búsqueda en múltiples campos de texto
+        search_pattern = f"%{texto_busqueda}%"
+        query = query.filter(
+            (ManualCuentas.descripcion_detallada.ilike(search_pattern)) |
+            (ManualCuentas.instrucciones_uso.ilike(search_pattern)) |
+            (ManualCuentas.ejemplos_movimientos.ilike(search_pattern)) |
+            (ManualCuentas.normativa_aplicable.ilike(search_pattern)) |
+            (ManualCuentas.cuentas_relacionadas.ilike(search_pattern))
+        )
+    
+    if naturaleza_cuenta:
+        query = query.filter(ManualCuentas.naturaleza_cuenta == naturaleza_cuenta)
+    
+    if clasificacion:
+        query = query.filter(ManualCuentas.clasificacion.ilike(f"%{clasificacion}%"))
+    
+    if solo_con_ejemplos:
+        query = query.filter(ManualCuentas.ejemplos_movimientos.isnot(None))
+        query = query.filter(ManualCuentas.ejemplos_movimientos != '')
+    
+    # Ordenar por ID de cuenta para mantener consistencia
+    query = query.order_by(ManualCuentas.id_cuenta)
+    
+    return query.offset(skip).limit(limit).all()
 
 def update_manual_cuenta(db: Session, manual_id: int, manual_data: ManualCuentasUpdate) -> ManualCuentas:
     """Actualizar un manual de cuenta existente"""

@@ -34,6 +34,8 @@ class ManualCuentasRead(ManualCuentasBase):
     id_manual: int
     fecha_creacion: datetime
     fecha_actualizacion: datetime
+    codigo_cuenta: Optional[str] = Field(None, description="Código de la cuenta asociada")
+    nombre_cuenta: Optional[str] = Field(None, description="Nombre de la cuenta asociada")
     
     class Config:
         from_attributes = True

@@ -30,34 +30,69 @@ def mostrar_catalogo(backend_url: str):
     
     st.subheader("Catálogo de Cuentas")
     
-    # Filtros
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        filtro_tipo = st.selectbox(
-            "Filtrar por tipo:",
-            ["Todos", "Activo", "Pasivo", "Capital", "Ingreso", "Egreso"]
+    # Filtros en un expander para mejor organización
+    with st.expander("🔍 Filtros de Búsqueda", expanded=True):
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            filtro_tipo = st.selectbox(
+                "Tipo de Cuenta:",
+                ["Todos", "Activo", "Pasivo", "Capital", "Ingreso", "Egreso"],
+                key="filtro_tipo_catalogo"
+            )
+        
+        with col2:
+            filtro_estado = st.selectbox(
+                "Estado:",
+                ["Todos", "ACTIVA", "INACTIVA"],
+                key="filtro_estado_catalogo"
+            )
+        
+        with col3:
+            filtro_movimientos = st.selectbox(
+                "Acepta Movimientos:",
+                ["Todos", "Sí", "No"],
+                key="filtro_movimientos_catalogo"
+            )
+        
+        with col4:
+            filtro_nivel = st.selectbox(
+                "Nivel:",
+                ["Todos", "1", "2", "3", "4", "5"],
+                key="filtro_nivel_catalogo"
+            )
+        
+        buscar_codigo = st.text_input(
+            "🔎 Buscar por código o nombre:", 
+            placeholder="Ej: 1101 o Caja",
+            key="buscar_codigo_catalogo"
         )
-    
-    with col2:
-        filtro_estado = st.selectbox(
-            "Estado:",
-            ["Todos", "ACTIVA", "INACTIVA"]
-        )
-    
-    with col3:
-        buscar_codigo = st.text_input("Buscar por código:", placeholder="Ej: 1101")
+        
+        # Botón para aplicar filtros (opcional, ya que Streamlit refresca automáticamente)
+        st.caption("Los filtros se aplican automáticamente")
     
     try:
-        # Obtener cuentas del backend
+        # Construir parámetros de consulta
         params = {}
+        
         if filtro_tipo != "Todos":
             params["tipo_cuenta"] = filtro_tipo
+        
         if filtro_estado != "Todos":
             params["estado"] = filtro_estado
+        
+        if filtro_movimientos == "Sí":
+            params["acepta_movimientos"] = True
+        elif filtro_movimientos == "No":
+            params["acepta_movimientos"] = False
+        
+        if filtro_nivel != "Todos":
+            params["nivel"] = int(filtro_nivel)
+        
         if buscar_codigo:
             params["codigo_like"] = buscar_codigo
         
+        # Realizar petición al backend
         response = requests.get(f"{backend_url}/api/catalogo-cuentas", params=params)
         
         if response.status_code == 200:

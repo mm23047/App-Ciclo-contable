@@ -19,9 +19,35 @@ def crear_cuenta(cuenta: CatalogoCuentaCreate, db: Session = Depends(get_db)):
     return create_cuenta(db, cuenta)
 
 @router.get("/", response_model=List[CatalogoCuentaRead])
-def listar_cuentas(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Obtener todas las cuentas con paginación"""
-    return get_cuentas(db, skip=skip, limit=limit)
+def listar_cuentas(
+    skip: int = 0, 
+    limit: int = 100,
+    tipo_cuenta: str = None,
+    estado: str = None,
+    codigo_like: str = None,
+    acepta_movimientos: bool = None,
+    nivel: int = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Obtener todas las cuentas con filtros opcionales.
+    
+    - **tipo_cuenta**: Filtrar por tipo (Activo, Pasivo, Capital, Ingreso, Egreso)
+    - **estado**: Filtrar por estado (ACTIVA, INACTIVA)
+    - **codigo_like**: Buscar por código o nombre de cuenta (parcial)
+    - **acepta_movimientos**: Filtrar por si acepta movimientos
+    - **nivel**: Filtrar por nivel de cuenta
+    """
+    return get_cuentas(
+        db, 
+        skip=skip, 
+        limit=limit,
+        tipo_cuenta=tipo_cuenta,
+        estado=estado,
+        codigo_like=codigo_like,
+        acepta_movimientos=acepta_movimientos,
+        nivel=nivel
+    )
 
 @router.get("/{cuenta_id}", response_model=CatalogoCuentaRead)
 def obtener_cuenta(cuenta_id: int, db: Session = Depends(get_db)):

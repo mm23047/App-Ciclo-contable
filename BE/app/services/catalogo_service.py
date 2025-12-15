@@ -54,9 +54,60 @@ def get_cuenta(db: Session, cuenta_id: int) -> Optional[CatalogoCuentas]:
         )
     return cuenta
 
-def get_cuentas(db: Session, skip: int = 0, limit: int = 100) -> List[CatalogoCuentas]:
-    """Obtener todas las cuentas con paginación"""
-    return db.query(CatalogoCuentas).offset(skip).limit(limit).all()
+def get_cuentas(
+    db: Session, 
+    skip: int = 0, 
+    limit: int = 100,
+    tipo_cuenta: Optional[str] = None,
+    estado: Optional[str] = None,
+    codigo_like: Optional[str] = None,
+    acepta_movimientos: Optional[bool] = None,
+    nivel: Optional[int] = None
+) -> List[CatalogoCuentas]:
+    """
+    Obtener todas las cuentas con filtros opcionales y paginación.
+    
+    Args:
+        db: Sesión de base de datos
+        skip: Número de registros a saltar (paginación)
+        limit: Número máximo de registros a retornar
+        tipo_cuenta: Filtrar por tipo de cuenta (Activo, Pasivo, etc.)
+        estado: Filtrar por estado (ACTIVA, INACTIVA)
+        codigo_like: Buscar por código O nombre de cuenta (búsqueda parcial)
+        acepta_movimientos: Filtrar por si acepta movimientos
+        nivel: Filtrar por nivel de cuenta en la jerarquía
+        
+    Returns:
+        Lista de cuentas que cumplen con los filtros
+    """
+    query = db.query(CatalogoCuentas)
+    
+    # Aplicar filtros si están presentes
+    if tipo_cuenta:
+        query = query.filter(CatalogoCuentas.tipo_cuenta == tipo_cuenta)
+    
+    if estado:
+        query = query.filter(CatalogoCuentas.estado == estado)
+    
+    if codigo_like:
+        # Buscar tanto en código como en nombre de cuenta
+        search_pattern = f"%{codigo_like}%"
+        query = query.filter(
+            (CatalogoCuentas.codigo_cuenta.like(search_pattern)) |
+            (CatalogoCuentas.nombre_cuenta.ilike(search_pattern))
+        )
+    
+    if acepta_movimientos is not None:
+        query = query.filter(CatalogoCuentas.acepta_movimientos == acepta_movimientos)
+    
+    if nivel is not None:
+        query = query.filter(CatalogoCuentas.nivel_cuenta == nivel)
+    
+    # Ordenar por código de cuenta para mantener jerarquía visual
+    query = query.order_by(CatalogoCuentas.codigo_cuenta)
+    
+    # Aplicar paginación
+    return query.offset(skip).limit(limit).all()
 
 def update_cuenta(db: Session, cuenta_id: int, cuenta_data: CatalogoCuentaUpdate) -> CatalogoCuentas:
     """Actualizar una cuenta existente"""

@@ -14,16 +14,38 @@ def render_page(backend_url: str):
     st.header("📖 Manual de Cuentas")
     st.markdown("Gestión de descripciones detalladas y guías de uso para cada cuenta contable")
     
-    # Tabs para organizar funcionalidades
-    tab1, tab2, tab3 = st.tabs(["📚 Ver Manual", "✍️ Crear/Editar", "🔍 Buscar"])
+    # Inicializar tab activo en session_state si no existe
+    if 'tab_manual_activo' not in st.session_state:
+        st.session_state.tab_manual_activo = "📚 Ver Manual"
     
-    with tab1:
+    # Detectar si hay un manual para editar y auto-cambiar a tab de edición
+    if st.session_state.get('auto_switch_tab_manual'):
+        st.session_state.tab_manual_activo = "✍️ Crear/Editar"
+        st.session_state.auto_switch_tab_manual = False
+        st.rerun()
+    
+    # Navegación con pills (botones de radio horizontal)
+    tab_seleccionado = st.radio(
+        "Navegación",
+        ["📚 Ver Manual", "✍️ Crear/Editar", "🔍 Buscar"],
+        index=["📚 Ver Manual", "✍️ Crear/Editar", "🔍 Buscar"].index(st.session_state.tab_manual_activo),
+        horizontal=True,
+        label_visibility="collapsed",
+        key="radio_navegacion_manual"
+    )
+    
+    # Actualizar session_state solo si cambió por interacción del usuario
+    if tab_seleccionado != st.session_state.tab_manual_activo:
+        st.session_state.tab_manual_activo = tab_seleccionado
+    
+    st.markdown("---")
+    
+    # Renderizar contenido según tab seleccionado
+    if st.session_state.tab_manual_activo == "📚 Ver Manual":
         mostrar_manual(backend_url)
-    
-    with tab2:
+    elif st.session_state.tab_manual_activo == "✍️ Crear/Editar":
         gestionar_manual(backend_url)
-    
-    with tab3:
+    else:  # Buscar
         buscar_manual(backend_url)
 
 def mostrar_manual(backend_url: str):
@@ -47,18 +69,11 @@ def mostrar_manual(backend_url: str):
         )
     
     try:
-        # Obtener manuales del backend
+        # Obtener manuales del backend (ahora incluye codigo_cuenta y nombre_cuenta)
         response = requests.get(f"{backend_url}/api/manual-cuentas")
         
         if response.status_code == 200:
             manuales = response.json()
-            
-            # Obtener catálogo de cuentas para mapear id_cuenta a nombre
-            response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
-            cuentas_dict = {}
-            if response_cuentas.status_code == 200:
-                cuentas = response_cuentas.json()
-                cuentas_dict = {c['id_cuenta']: {'codigo': c['codigo_cuenta'], 'nombre': c['nombre_cuenta']} for c in cuentas}
             
             # Aplicar filtro de naturaleza
             if naturaleza_filtro != "Todas":
@@ -67,17 +82,17 @@ def mostrar_manual(backend_url: str):
             if manuales:
                 # Ordenar manuales
                 if orden == "Código de Cuenta":
-                    manuales.sort(key=lambda x: cuentas_dict.get(x.get('id_cuenta', 0), {}).get('codigo', ''))
+                    manuales.sort(key=lambda x: x.get('codigo_cuenta', ''))
                 elif orden == "Nombre de Cuenta":
-                    manuales.sort(key=lambda x: cuentas_dict.get(x.get('id_cuenta', 0), {}).get('nombre', ''))
+                    manuales.sort(key=lambda x: x.get('nombre_cuenta', ''))
                 else:  # Fecha Creación
                     manuales.sort(key=lambda x: x.get('fecha_creacion', ''), reverse=True)
                 
                 # Mostrar manuales
                 for idx, manual in enumerate(manuales):
-                    id_cuenta = manual.get('id_cuenta')
-                    cuenta_info = cuentas_dict.get(id_cuenta, {'codigo': 'N/A', 'nombre': 'Sin nombre'})
-                    with st.expander(f"📄 {cuenta_info['codigo']} - {cuenta_info['nombre']}"):
+                    codigo = manual.get('codigo_cuenta', 'N/A')
+                    nombre = manual.get('nombre_cuenta', 'Sin nombre')
+                    with st.expander(f"📄 {codigo} - {nombre}"):
                         mostrar_detalle_manual(manual, backend_url, idx)
                 
                 # Resumen estadístico
@@ -112,6 +127,12 @@ def mostrar_manual(backend_url: str):
 def mostrar_detalle_manual(manual: Dict[str, Any], backend_url: str, idx: int = 0):
     """Mostrar detalles de un manual específico"""
     
+    def editar_manual():
+        """Callback para editar manual"""
+        st.session_state.manual_editar = manual
+        st.session_state.auto_switch_tab_manual = True
+    
+    # Mostrar vista de solo lectura
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -156,11 +177,16 @@ def mostrar_detalle_manual(manual: Dict[str, Any], backend_url: str, idx: int = 
         if manual.get('usuario_actualizacion'):
             st.markdown(f"**Por:** {manual['usuario_actualizacion']}")
         
-        # Botón de edición
-        if st.button(f"✏️ Editar", key=f"edit_manual_{manual.get('id_manual', idx)}_{idx}"):
-            st.session_state.manual_editar = manual
-            st.session_state.tab_activo = 1
-            st.rerun()
+        st.markdown("---")
+        
+        # Botón de edición - redirección al formulario usando callback
+        st.button(
+            "✏️ Editar", 
+            key=f"edit_manual_{manual.get('id_manual', idx)}_{idx}", 
+            use_container_width=True, 
+            type="primary",
+            on_click=editar_manual
+        )
 
 def gestionar_manual(backend_url: str):
     """Crear o editar manual de cuenta"""
@@ -169,11 +195,16 @@ def gestionar_manual(backend_url: str):
     manual_editar = st.session_state.get('manual_editar', None)
     
     if manual_editar:
-        st.subheader(f"✏️ Editar Manual - {manual_editar.get('codigo_cuenta', 'N/A')}")
+        st.subheader(f"✏️ Editar Manual - {manual_editar.get('codigo_cuenta', 'N/A')} - {manual_editar.get('nombre_cuenta', 'N/A')}")
         
-        if st.button("⬅️ Cancelar Edición"):
-            del st.session_state.manual_editar
-            st.rerun()
+        col_cancel, col_info = st.columns([1, 3])
+        with col_cancel:
+            if st.button("⬅️ Volver al listado", use_container_width=True):
+                del st.session_state.manual_editar
+                st.session_state.tab_manual_activo = "📚 Ver Manual"
+                st.rerun()
+        with col_info:
+            st.info("💡 Editando manual existente - Los cambios se guardarán al hacer clic en 'Actualizar Manual'")
     else:
         st.subheader("📝 Crear Nuevo Manual de Cuenta")
     
@@ -318,6 +349,8 @@ def gestionar_manual(backend_url: str):
                             
                             if manual_editar:
                                 del st.session_state.manual_editar
+                                # Auto-regresar al listado después de editar
+                                st.session_state.tab_manual_activo = "📚 Ver Manual"
                             
                             st.rerun()
                         else:
@@ -336,78 +369,93 @@ def buscar_manual(backend_url: str):
     
     st.subheader("🔍 Búsqueda Avanzada en Manuales")
     
-    # Filtros de búsqueda
-    col1, col2 = st.columns(2)
+    # Inicializar resultados en session_state si no existen
+    if 'resultados_busqueda_manual' not in st.session_state:
+        st.session_state.resultados_busqueda_manual = None
     
-    with col1:
-        texto_busqueda = st.text_input(
-            "Buscar texto:",
-            placeholder="Buscar en descripción, instrucciones, ejemplos...",
-            help="Busca en todos los campos de texto del manual"
-        )
+    # Contenedor de filtros con expander
+    with st.expander("🔍 Filtros de Búsqueda", expanded=True):
+        col1, col2 = st.columns(2)
         
-        naturaleza_filtro = st.selectbox(
-            "Naturaleza:",
-            ["Todas", "DEUDORA", "ACREEDORA"]
-        )
-    
-    with col2:
-        clasificacion_filtro = st.text_input(
-            "Clasificación:",
-            placeholder="Ej: Corriente, No Corriente...",
-            help="Filtrar por clasificación de cuenta"
-        )
+        with col1:
+            texto_busqueda = st.text_input(
+                "Buscar texto:",
+                placeholder="Buscar en descripción, instrucciones, ejemplos...",
+                help="Busca en todos los campos de texto del manual",
+                key="search_text_manual"
+            )
+            
+            naturaleza_filtro = st.selectbox(
+                "Naturaleza:",
+                ["Todas", "DEUDORA", "ACREEDORA"],
+                key="naturaleza_manual"
+            )
         
-        solo_con_ejemplos = st.checkbox("Solo con ejemplos de movimientos", value=False)
+        with col2:
+            clasificacion_filtro = st.text_input(
+                "Clasificación:",
+                placeholder="Ej: Corriente, No Corriente...",
+                help="Filtrar por clasificación de cuenta",
+                key="clasificacion_manual"
+            )
+            
+            solo_con_ejemplos = st.checkbox(
+                "Solo con ejemplos de movimientos", 
+                value=False,
+                key="ejemplos_manual"
+            )
+        
+        # Botón de búsqueda dentro del expander
+        buscar_click = st.button("🔍 Buscar", key="btn_buscar_manual", type="primary")
     
-    if st.button("🔍 Buscar", width="stretch"):
+    # Ejecutar búsqueda SOLO cuando se hace clic en el botón
+    if buscar_click:
         try:
-            # Obtener todos los manuales y filtrar localmente
-            response = requests.get(f"{backend_url}/api/manual-cuentas")
+            # Construir parámetros para el backend
+            params = {}
+            
+            if texto_busqueda:
+                params['texto_busqueda'] = texto_busqueda
+            
+            if naturaleza_filtro != "Todas":
+                params['naturaleza_cuenta'] = naturaleza_filtro
+            
+            if clasificacion_filtro:
+                params['clasificacion'] = clasificacion_filtro
+            
+            if solo_con_ejemplos:
+                params['solo_con_ejemplos'] = True
+            
+            # Llamar al backend con los filtros (ahora incluye codigo_cuenta y nombre_cuenta)
+            response = requests.get(f"{backend_url}/api/manual-cuentas", params=params)
             
             if response.status_code == 200:
-                manuales = response.json()
-                
-                # Aplicar filtros
-                manuales_filtrados = manuales
-                
-                if texto_busqueda:
-                    manuales_filtrados = [
-                        m for m in manuales_filtrados
-                        if any(texto_busqueda.lower() in str(m.get(campo, '')).lower() 
-                               for campo in ['descripcion_detallada', 'instrucciones_uso', 'ejemplos_movimientos', 'normativa_aplicable', 'cuentas_relacionadas'])
-                    ]
-                
-                if naturaleza_filtro != "Todas":
-                    manuales_filtrados = [
-                        m for m in manuales_filtrados
-                        if m.get('naturaleza_cuenta') == naturaleza_filtro
-                    ]
-                
-                if clasificacion_filtro:
-                    manuales_filtrados = [
-                        m for m in manuales_filtrados
-                        if clasificacion_filtro.lower() in str(m.get('clasificacion', '')).lower()
-                    ]
-                
-                if solo_con_ejemplos:
-                    manuales_filtrados = [
-                        m for m in manuales_filtrados
-                        if m.get('ejemplos_movimientos')
-                    ]
-                
-                # Mostrar resultados
-                if manuales_filtrados:
-                    st.success(f"✅ Se encontraron {len(manuales_filtrados)} manuales")
-                    
-                    for idx_busqueda, manual in enumerate(manuales_filtrados):
-                        with st.expander(f"📄 {manual.get('codigo_cuenta', 'N/A')} - {manual.get('nombre_cuenta', manual.get('descripcion_detallada', 'Sin descripción')[:50])}"):
-                            mostrar_detalle_manual(manual, backend_url, 1000 + idx_busqueda)
-                else:
-                    st.warning("⚠️ No se encontraron manuales con los filtros aplicados")
-                    
+                # Guardar resultados en session_state para que persistan entre reruns
+                st.session_state.resultados_busqueda_manual = response.json()
             else:
-                st.error(f"Error al buscar: {response.status_code}")
+                st.error(f"❌ Error al buscar: {response.status_code}")
+                st.session_state.resultados_busqueda_manual = None
                 
         except requests.exceptions.RequestException as e:
-            st.error(f"Error de conexión: {e}")
+            st.error(f"❌ Error de conexión con el backend: {e}")
+            st.session_state.resultados_busqueda_manual = None
+    
+    # Mostrar resultados desde session_state (persisten entre reruns)
+    if st.session_state.resultados_busqueda_manual is not None:
+        manuales_filtrados = st.session_state.resultados_busqueda_manual
+        
+        if manuales_filtrados:
+            st.success(f"✅ Se encontraron {len(manuales_filtrados)} manuales")
+            
+            for idx_busqueda, manual in enumerate(manuales_filtrados):
+                codigo = manual.get('codigo_cuenta', 'N/A')
+                nombre = manual.get('nombre_cuenta', 'Sin nombre')
+                
+                titulo = f"📄 {codigo} - {nombre}"
+                with st.expander(titulo):
+                    mostrar_detalle_manual(manual, backend_url, 1000 + idx_busqueda)
+        else:
+            st.info("ℹ️ No se encontraron manuales con los filtros aplicados")
+            st.caption("Intenta ajustar los criterios de búsqueda")
+    else:
+        st.info("👆 Configura los filtros y presiona 'Buscar' para ver resultados")
