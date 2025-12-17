@@ -13,22 +13,28 @@ from datetime import datetime
 
 def create_transaccion(db: Session, transaccion_data: TransaccionCreate) -> Transaccion:
     """Crear una nueva transacción"""
-    # Validar que el período existe si se proporciona
-    if transaccion_data.id_periodo:
-        periodo = db.query(PeriodoContable).filter(
-            PeriodoContable.id_periodo == transaccion_data.id_periodo
-        ).first()
-        if not periodo:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="ID de período inválido"
-            )
+    # Validar que el período existe y está abierto
+    periodo = db.query(PeriodoContable).filter(
+        PeriodoContable.id_periodo == transaccion_data.id_periodo
+    ).first()
     
-    # Crear transacción con timestamp actual
-    transaccion_dict = transaccion_data.dict()
-    transaccion_dict['fecha_creacion'] = datetime.now()
+    if not periodo:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El período con ID {transaccion_data.id_periodo} no existe"
+        )
+    
+    if periodo.estado != 'ABIERTO':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El período está {periodo.estado}. Solo se pueden crear transacciones en períodos ABIERTOS"
+        )
     
     try:
+        # Crear transacción con timestamp actual
+        transaccion_dict = transaccion_data.dict()
+        transaccion_dict['fecha_creacion'] = datetime.now()
+        
         db_transaccion = Transaccion(**transaccion_dict)
         db.add(db_transaccion)
         db.commit()
@@ -36,28 +42,27 @@ def create_transaccion(db: Session, transaccion_data: TransaccionCreate) -> Tran
         return db_transaccion
     except IntegrityError as e:
         db.rollback()
-        print(f"IntegrityError: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error creating transaction: {str(e)}"
+            detail=f"Error de integridad al crear transacción: {str(e)}"
         )
     except Exception as e:
         db.rollback()
-        print(f"General error: {e}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error creating transaction: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al crear transacción: {str(e)}"
         )
 
-def get_transaccion(db: Session, transaccion_id: int) -> Optional[Transaccion]:
+def get_transaccion(db: Session, transaccion_id: int) -> Transaccion:
     """Obtener una transacción específica por ID"""
     transaccion = db.query(Transaccion).filter(
         Transaccion.id_transaccion == transaccion_id
     ).first()
+    
     if not transaccion:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Transaction not found"
+            detail=f"Transacción con ID {transaccion_id} no encontrada"
         )
     return transaccion
 
@@ -94,10 +99,17 @@ def update_transaccion(db: Session, transaccion_id: int, transaccion_data: Trans
         periodo = db.query(PeriodoContable).filter(
             PeriodoContable.id_periodo == update_data['id_periodo']
         ).first()
+        
         if not periodo:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid period ID"
+                detail=f"El período con ID {update_data['id_periodo']} no existe"
+            )
+        
+        if periodo.estado != 'ABIERTO':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se puede mover a un período {periodo.estado}. Solo períodos ABIERTOS"
             )
     
     try:
@@ -106,20 +118,42 @@ def update_transaccion(db: Session, transaccion_id: int, transaccion_data: Trans
         db.commit()
         db.refresh(transaccion)
         return transaccion
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error updating transaction"
+            detail=f"Error de integridad al actualizar transacción: {str(e)}"
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al actualizar transacción: {str(e)}"
         )
 
 def delete_transaccion(db: Session, transaccion_id: int) -> bool:
-    """Eliminar una transacción"""
+    """Eliminar una transacción y sus asientos relacionados en cascada"""
     transaccion = get_transaccion(db, transaccion_id)
     
-    # TODO: Definir política de cascada - actualmente implementa eliminación en cascada
-    # Alternativa: marcar como inactivo en lugar de eliminar
+    # Verificar que el período esté abierto
+    periodo = db.query(PeriodoContable).filter(
+        PeriodoContable.id_periodo == transaccion.id_periodo
+    ).first()
     
-    db.delete(transaccion)
-    db.commit()
-    return True
+    if periodo and periodo.estado != 'ABIERTO':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se puede eliminar una transacción de un período {periodo.estado}"
+        )
+    
+    try:
+        # La eliminación en cascada está configurada en el modelo (cascade="all, delete-orphan")
+        db.delete(transaccion)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al eliminar transacción: {str(e)}"
+        )

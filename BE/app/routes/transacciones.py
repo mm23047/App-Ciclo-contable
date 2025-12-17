@@ -14,11 +14,10 @@ from datetime import datetime
 
 router = APIRouter(prefix="/api/transacciones", tags=["Transacciones"])
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TransaccionRead, status_code=status.HTTP_201_CREATED)
 def crear_transaccion(transaccion: TransaccionCreate, db: Session = Depends(get_db)):
     """Crear una nueva transacción"""
-    nueva_transaccion = create_transaccion(db, transaccion)
-    return {"id_transaccion": nueva_transaccion.id_transaccion}
+    return create_transaccion(db, transaccion)
 
 @router.get("/", response_model=List[TransaccionRead])
 def listar_transacciones(
@@ -57,7 +56,6 @@ def actualizar_transaccion(
 
 @router.delete("/{transaccion_id}", status_code=status.HTTP_204_NO_CONTENT)
 def eliminar_transaccion(transaccion_id: int, db: Session = Depends(get_db)):
-    """Eliminar una transacción"""
-    # TODO: Definir política de cascada para asientos relacionados
+    """Eliminar una transacción y sus asientos relacionados"""
     delete_transaccion(db, transaccion_id)
     return None

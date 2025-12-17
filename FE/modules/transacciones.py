@@ -24,14 +24,40 @@ def load_periods(backend_url: str):
         st.error(f"❌ Error de conexión al cargar períodos: {str(e)}")
         return []
 
+def on_edit_click(transaction_id, transaction_data):
+    """Callback cuando se hace click en Modificar"""
+    st.session_state.edit_transaction_id = transaction_id
+    st.session_state.edit_transaction_data = transaction_data
+    # No cambiar pestaña automáticamente, dejar que el usuario navegue
+
+def on_delete_click(transaction_id):
+    """Callback cuando se hace click en Eliminar"""
+    if 'confirm_delete_id' not in st.session_state:
+        st.session_state.confirm_delete_id = None
+    st.session_state.confirm_delete_id = transaction_id
+
 def render_page(backend_url: str):
     """Renderizar la página de gestión de transacciones"""
     st.title("💼 Gestión de Transacciones Contables")
     st.markdown("---")
     
-    # Mostrar transacción actual si existe
+    # Mostrar transacción actual si existe con más detalles
     if 'transaccion_actual' in st.session_state and st.session_state.transaccion_actual:
-        st.success(f"✅ Transacción Activa: **ID {st.session_state.transaccion_actual}** | Puedes crear asientos en el módulo de Asientos")
+        col_info1, col_info2 = st.columns([3, 1])
+        with col_info1:
+            st.success(f"✅ **Transacción Activa: ID {st.session_state.transaccion_actual}** | Puedes crear asientos en el módulo de Asientos")
+        with col_info2:
+            if st.button("🔄 Deseleccionar", key="deselect_trans"):
+                st.session_state.transaccion_actual = None
+                st.rerun()
+    
+    # Si hay transacción en modo edición, mostrar SOLO el formulario de edición
+    if 'edit_transaction_id' in st.session_state and st.session_state.edit_transaction_id:
+        st.markdown("---")
+        create_transaction_form(backend_url)
+        st.markdown("---")
+        st.info("💡 **Sugerencia**: Para ver la lista de transacciones, primero completa o cancela la edición")
+        return  # No mostrar las tabs cuando está editando
     
     # Tabs para mejor organización
     tab1, tab2, tab3 = st.tabs(["📝 Nueva Transacción", "📋 Lista de Transacciones", "📊 Resumen"])
@@ -40,22 +66,30 @@ def render_page(backend_url: str):
         create_transaction_form(backend_url)
     
     with tab2:
-        # Formulario de edición (solo si hay una transacción seleccionada para editar)
-        if 'edit_transaction_id' in st.session_state and 'edit_transaction_data' in st.session_state:
-            with st.container():
-                st.markdown("### ✏️ Modificar Transacción")
-                edit_transaction_form(backend_url)
-                st.markdown("---")
-        
         list_transactions(backend_url)
     
     with tab3:
         show_transaction_summary(backend_url)
 
 def create_transaction_form(backend_url: str):
-    """Formulario para crear una nueva transacción"""
-    st.markdown("### ➕ Crear Nueva Transacción")
-    st.markdown("Registra una nueva operación contable en el sistema")
+    """Formulario para crear o editar una transacción"""
+    # Detectar modo edición
+    modo_edicion = 'edit_transaction_id' in st.session_state and st.session_state.edit_transaction_id
+    
+    if modo_edicion:
+        st.markdown("### ✏️ Modificar Transacción")
+        st.info(f"🔄 **Editando Transacción ID: {st.session_state.edit_transaction_id}** | Modifica los campos necesarios y haz click en 'Actualizar Transacción'")
+        transaction_data = st.session_state.edit_transaction_data
+        
+        # Botón para cancelar edición
+        if st.button("❌ Cancelar Edición", type="secondary"):
+            del st.session_state.edit_transaction_id
+            del st.session_state.edit_transaction_data
+            st.rerun()
+    else:
+        st.markdown("### ➕ Crear Nueva Transacción")
+        st.markdown("Registra una nueva operación contable en el sistema")
+        transaction_data = None
     
     # Cargar períodos disponibles
     periods = load_periods(backend_url)
@@ -66,31 +100,57 @@ def create_transaction_form(backend_url: str):
         col1, col2, col3 = st.columns([2, 2, 1])
         
         with col1:
+            # Prellenar descripción si está en modo edición
+            default_descripcion = transaction_data.get('descripcion', '') if transaction_data else ''
             descripcion = st.text_area(
                 "📝 Descripción *",
+                value=default_descripcion,
                 placeholder="Ej: Venta de productos, Pago de nómina, Compra de activos...",
                 height=100,
                 help="Descripción detallada de la transacción"
             )
         
         with col2:
+            # Prellenar fecha si está en modo edición
+            if transaction_data:
+                try:
+                    existing_date = datetime.fromisoformat(transaction_data['fecha_transaccion'].replace('Z', '+00:00'))
+                    default_date = existing_date.date()
+                except:
+                    default_date = date.today()
+            else:
+                default_date = date.today()
+            
             fecha_transaccion = st.date_input(
                 "📅 Fecha de Transacción *",
-                value=date.today(),
+                value=default_date,
                 help="Fecha cuando ocurrió la transacción"
             )
+            
+            # Prellenar tipo si está en modo edición
+            tipo_index = 0
+            if transaction_data and transaction_data.get('tipo') == 'EGRESO':
+                tipo_index = 1
             
             tipo = st.selectbox(
                 "🔄 Tipo de Transacción *",
                 ["INGRESO", "EGRESO"],
+                index=tipo_index,
                 help="INGRESO: Entradas de dinero | EGRESO: Salidas de dinero"
             )
         
         with col3:
+            # Prellenar moneda si está en modo edición
+            currencies = ["USD", "EUR", "MXN", "COP"]
+            moneda_index = 0
+            if transaction_data:
+                current_currency = transaction_data.get('moneda', 'USD')
+                moneda_index = currencies.index(current_currency) if current_currency in currencies else 0
+            
             moneda = st.selectbox(
                 "💱 Moneda",
-                ["USD", "EUR", "MXN", "COP"],
-                index=0,
+                currencies,
+                index=moneda_index,
                 help="Moneda de la transacción"
             )
         
@@ -108,10 +168,20 @@ def create_transaction_form(backend_url: str):
                     display_text = f"{icon} {period['tipo_periodo']} | {period['fecha_inicio']} → {period['fecha_fin']}"
                     period_options[display_text] = period['id_periodo']
                 
+                # Prellenar período si está en modo edición
+                period_index = 0
+                if transaction_data and transaction_data.get('id_periodo'):
+                    # Buscar índice del período actual
+                    for idx, (display, pid) in enumerate(period_options.items()):
+                        if pid == transaction_data['id_periodo']:
+                            period_index = idx
+                            break
+                
                 selected_period_display = st.selectbox(
                     "📆 Período Contable *",
                     options=list(period_options.keys()),
-                    help="Selecciona el período contable para la transacción"
+                    index=period_index,
+                    help="Selecciona el período contable para la transacción. Solo se permiten períodos ABIERTOS"
                 )
                 selected_period_id = period_options[selected_period_display]
             else:
@@ -119,46 +189,71 @@ def create_transaction_form(backend_url: str):
                 selected_period_id = None
         
         with col2:
+            # Prellenar categoría si está en modo edición
+            categorias_lista = [
+                "VENTA",
+                "COMPRA",
+                "NÓMINA",
+                "SERVICIOS",
+                "IMPUESTOS",
+                "INVERSIÓN",
+                "PRÉSTAMO",
+                "ACTIVOS",
+                "GASTOS ADMINISTRATIVOS",
+                "GASTOS OPERATIVOS",
+                "OTROS"
+            ]
+            categoria_index = 0
+            if transaction_data and transaction_data.get('categoria'):
+                try:
+                    categoria_index = categorias_lista.index(transaction_data['categoria'])
+                except ValueError:
+                    categoria_index = 0
+            
             categoria = st.selectbox(
                 "🏷️ Categoría",
-                [
-                    "VENTA",
-                    "COMPRA",
-                    "NÓMINA",
-                    "SERVICIOS",
-                    "IMPUESTOS",
-                    "INVERSIÓN",
-                    "PRÉSTAMO",
-                    "ACTIVOS",
-                    "GASTOS ADMINISTRATIVOS",
-                    "GASTOS OPERATIVOS",
-                    "OTROS"
-                ],
-                index=0,
-                help="Categoría para clasificar la transacción"
+                categorias_lista,
+                index=categoria_index,
+                help="Categoría para clasificar la transacción (según catálogo permitido)"
             )
         
         with col3:
+            # Obtener usuario logueado automáticamente
+            if transaction_data:
+                # En modo edición, usar el usuario de la transacción
+                default_usuario = transaction_data.get('usuario_creacion', '')
+            else:
+                # En modo creación, usar el usuario logueado
+                default_usuario = st.session_state.get('username', '')
+            
             usuario_creacion = st.text_input(
                 "👤 Usuario *",
-                placeholder="Nombre del usuario",
-                help="Usuario responsable de la transacción"
+                value=default_usuario,
+                disabled=not modo_edicion,  # Deshabilitado en modo creación, habilitado en edición
+                placeholder="Usuario logueado" if not modo_edicion else "Nombre del usuario",
+                help="Usuario responsable de la transacción (detectado automáticamente)"
             )
         
         # Campos opcionales en expander con mejor diseño
-        with st.expander("📎 Información Adicional (Opcional)"):
+        with st.expander("📎 Información Adicional (Opcional)", expanded=modo_edicion):
             col1, col2 = st.columns(2)
             
             with col1:
+                # Prellenar número de referencia si está en modo edición
+                default_referencia = transaction_data.get('numero_referencia', '') if transaction_data else ''
                 numero_referencia = st.text_input(
                     "🔢 Número de Referencia",
+                    value=default_referencia,
                     placeholder="Ej: FAC-2024-001, REF-12345",
                     help="Número de referencia externo o de documento"
                 )
             
             with col2:
+                # Prellenar observaciones si está en modo edición
+                default_observaciones = transaction_data.get('observaciones', '') if transaction_data else ''
                 observaciones = st.text_area(
                     "📋 Observaciones",
+                    value=default_observaciones,
                     height=80,
                     placeholder="Notas adicionales sobre la transacción...",
                     help="Observaciones o comentarios adicionales"
@@ -168,10 +263,14 @@ def create_transaction_form(backend_url: str):
         col1, col2, col3 = st.columns([2, 1, 1])
         
         with col2:
-            clear_button = st.form_submit_button("🔄 Limpiar", type="secondary", use_container_width=True)
+            if not modo_edicion:
+                clear_button = st.form_submit_button("🔄 Limpiar", type="secondary", use_container_width=True)
         
         with col3:
-            submitted = st.form_submit_button("✅ Crear Transacción", type="primary", use_container_width=True)
+            if modo_edicion:
+                submitted = st.form_submit_button("💾 Actualizar Transacción", type="primary", use_container_width=True)
+            else:
+                submitted = st.form_submit_button("✅ Crear Transacción", type="primary", use_container_width=True)
         
         if submitted:
             if not descripcion or not usuario_creacion:
@@ -182,11 +281,20 @@ def create_transaction_form(backend_url: str):
                 st.error("❌ No se pudo seleccionar un período válido")
                 return
             
-            # Combine date with current time for datetime
-            fecha_datetime = datetime.combine(fecha_transaccion, datetime.now().time())
+            # Combine date with time
+            if modo_edicion and transaction_data:
+                # Usar tiempo existente si es edición
+                try:
+                    existing_dt = datetime.fromisoformat(transaction_data['fecha_transaccion'].replace('Z', '+00:00'))
+                    fecha_datetime = datetime.combine(fecha_transaccion, existing_dt.time())
+                except:
+                    fecha_datetime = datetime.combine(fecha_transaccion, datetime.now().time())
+            else:
+                # Usar tiempo actual si es creación
+                fecha_datetime = datetime.combine(fecha_transaccion, datetime.now().time())
             
             # Prepare request data
-            transaction_data = {
+            request_data = {
                 "fecha_transaccion": fecha_datetime.isoformat(),
                 "descripcion": descripcion,
                 "tipo": tipo,
@@ -199,131 +307,48 @@ def create_transaction_form(backend_url: str):
             }
             
             try:
-                response = requests.post(
-                    f"{backend_url}/api/transacciones/",
-                    json=transaction_data,
-                    timeout=10
-                )
-                
-                if response.status_code == 201:
-                    data = response.json()
-                    transaction_id = data.get("id_transaccion")
+                if modo_edicion:
+                    # Actualizar transacción existente
+                    response = requests.put(
+                        f"{backend_url}/api/transacciones/{st.session_state.edit_transaction_id}",
+                        json=request_data,
+                        timeout=10
+                    )
                     
-                    # Set current transaction in session state
-                    st.session_state.transaccion_actual = transaction_id
-                    
-                    st.success(f"✅ Transacción creada exitosamente (ID: {transaction_id})")
-                    st.info("💡 Ahora puedes crear asientos para esta transacción")
-                    st.rerun()
+                    if response.status_code == 200:
+                        st.success(f"✅ Transacción {st.session_state.edit_transaction_id} actualizada exitosamente")
+                        # Limpiar estado de edición
+                        del st.session_state.edit_transaction_id
+                        del st.session_state.edit_transaction_data
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Error al actualizar transacción: {response.text}")
                 else:
-                    st.error(f"❌ Error al crear transacción: {response.text}")
+                    # Crear nueva transacción
+                    response = requests.post(
+                        f"{backend_url}/api/transacciones/",
+                        json=request_data,
+                        timeout=10
+                    )
+                    
+                    if response.status_code == 201:
+                        data = response.json()
+                        transaction_id = data.get("id_transaccion")
+                        
+                        if transaction_id:
+                            # Set current transaction in session state
+                            st.session_state.transaccion_actual = transaction_id
+                            
+                            st.success(f"✅ Transacción creada exitosamente (ID: {transaction_id})")
+                            st.info("💡 Ahora puedes crear asientos para esta transacción")
+                            st.rerun()
+                        else:
+                            st.error("❌ No se pudo obtener el ID de la transacción creada")
+                    else:
+                        st.error(f"❌ Error al crear transacción: {response.text}")
                     
             except requests.exceptions.RequestException as e:
                 st.error(f"❌ Error de conexión: {str(e)}")
-
-def edit_transaction_form(backend_url: str):
-    """Formulario para modificar una transacción existente"""
-    transaction_data = st.session_state.edit_transaction_data
-    transaction_id = st.session_state.edit_transaction_id
-    
-    # Cargar períodos para mostrar información descriptiva
-    periods = load_periods(backend_url)
-    
-    st.info(f"🔄 Modificando Transacción ID: {transaction_id}")
-    
-    # Botón para cancelar edición
-    if st.button("❌ Cancelar Edición"):
-        if 'edit_transaction_id' in st.session_state:
-            del st.session_state.edit_transaction_id
-        if 'edit_transaction_data' in st.session_state:
-            del st.session_state.edit_transaction_data
-        st.rerun()
-    
-    with st.form("edit_transaction"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Parse the existing date from ISO format
-            try:
-                existing_date = datetime.fromisoformat(transaction_data['fecha_transaccion'].replace('Z', '+00:00'))
-            except (ValueError, KeyError):
-                # Fallback to current date if parsing fails
-                existing_date = datetime.now()
-            
-            fecha_transaccion = st.date_input(
-                "Fecha de Transacción",
-                value=existing_date.date(),
-                help="Fecha cuando ocurrió la transacción"
-            )
-            
-            tipo = st.selectbox(
-                "Tipo de Transacción",
-                ["INGRESO", "EGRESO"],
-                index=0 if transaction_data.get('tipo') == 'INGRESO' else 1,
-                help="Tipo de transacción contable"
-            )
-            
-            usuario_creacion = st.text_input(
-                "Usuario",
-                value=transaction_data.get('usuario_creacion', ''),
-                help="Usuario que crea la transacción"
-            )
-        
-        with col2:
-            descripcion = st.text_area(
-                "Descripción",
-                value=transaction_data.get('descripcion', ''),
-                height=100,
-                help="Descripción completa de la transacción"
-            )
-            
-            # List of common currencies with current value selected
-            currencies = ["USD", "EUR", "MXN", "COP"]
-            current_currency = transaction_data.get('moneda', 'USD')
-            currency_index = currencies.index(current_currency) if current_currency in currencies else 0
-            
-            moneda = st.selectbox(
-                "Moneda",
-                currencies,
-                index=currency_index,
-                help="Moneda de la transacción"
-            )
-            
-            # Display current period information in a more user-friendly way
-            current_period_id = transaction_data.get('id_periodo', 'N/A')
-            if periods and current_period_id != 'N/A':
-                # Find the current period in the list
-                current_period = next((p for p in periods if p['id_periodo'] == current_period_id), None)
-                if current_period:
-                    period_display = f"{current_period['tipo_periodo']} {current_period['fecha_inicio']} - {current_period['fecha_fin']}"
-                    st.info(f"📅 Período actual: {period_display} (ID: {current_period_id})")
-                else:
-                    st.info(f"📅 Período actual: ID {current_period_id} (no encontrado en períodos activos)")
-            else:
-                st.info(f"📅 Período actual: ID {current_period_id}")
-        
-        submitted = st.form_submit_button("💾 Guardar Cambios", type="primary")
-        
-        if submitted:
-            if not descripcion or not usuario_creacion:
-                st.error("❌ Descripción y Usuario son campos obligatorios")
-                return
-            
-            # Combine date with existing time for datetime
-            existing_time = existing_date.time()
-            fecha_datetime = datetime.combine(fecha_transaccion, existing_time)
-            
-            # Prepare update data - only include fields that can be modified
-            update_data = {
-                "fecha_transaccion": fecha_datetime.isoformat(),
-                "descripcion": descripcion,
-                "tipo": tipo,
-                "moneda": moneda,
-                "usuario_creacion": usuario_creacion
-                # Note: id_periodo is not included as per requirements
-            }
-            
-            edit_transaction(backend_url, transaction_id, update_data)
 
 def list_transactions(backend_url: str):
     """Listar transacciones existentes en una tabla"""
@@ -375,20 +400,20 @@ def list_transactions(backend_url: str):
             if search_term:
                 filtered_transactions = [t for t in filtered_transactions if search_term.lower() in t.get('descripcion', '').lower()]
             
+            # Verificar si hay resultados después del filtro
+            if not filtered_transactions:
+                st.info("🔍 No se encontraron transacciones con los filtros aplicados")
+                return
+            
             # Convert to DataFrame for display
             df = pd.DataFrame(filtered_transactions)
             
             # Format datetime columns
-            if not df.empty:
-                try:
-                    df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
-                    df['fecha_creacion'] = pd.to_datetime(df['fecha_creacion'], format='mixed').dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion'], infer_datetime_format=True).dt.strftime('%Y-%m-%d %H:%M')
-                    df['fecha_creacion'] = pd.to_datetime(df['fecha_creacion'], infer_datetime_format=True).dt.strftime('%Y-%m-%d %H:%M')
-                
-                # Añadir columna de estado visual
-                df['Estado'] = df['tipo'].apply(lambda x: '🟢 Ingreso' if x == 'INGRESO' else '🔴 Egreso')
+            df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion']).dt.strftime('%Y-%m-%d %H:%M')
+            df['fecha_creacion'] = pd.to_datetime(df['fecha_creacion']).dt.strftime('%Y-%m-%d %H:%M')
+            
+            # Añadir columna de estado visual
+            df['Estado'] = df['tipo'].apply(lambda x: '🟢 Ingreso' if x == 'INGRESO' else '🔴 Egreso')
             
             # Display table con estilo
             st.dataframe(
@@ -410,35 +435,50 @@ def list_transactions(backend_url: str):
             st.markdown("### ⚙️ Acciones")
             
             # Action buttons for each transaction
-            col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+            col1, col2, col3 = st.columns([4, 2, 2])
             
             with col1:
+                # Obtener valor por defecto (transacción actual si existe)
+                default_value = st.session_state.get('transaccion_actual', None)
+                
                 selected_id = st.selectbox(
-                    "Seleccionar Transacción para Acciones",
+                    "Seleccionar Transacción",
                     options=[None] + [t['id_transaccion'] for t in filtered_transactions],
-                    format_func=lambda x: "🔽 Selecciona una transacción..." if x is None else f"ID: {x}",
-                    key="select_trans_action"
+                    index=0 if not default_value else ([None] + [t['id_transaccion'] for t in filtered_transactions]).index(default_value) if default_value in [t['id_transaccion'] for t in filtered_transactions] else 0,
+                    format_func=lambda x: "🔽 Selecciona una transacción..." if x is None else f"✅ ID: {x} (Activa para asientos)",
+                    key="select_trans_action",
+                    help="La transacción seleccionada se usará automáticamente para crear asientos"
                 )
+                
+                # Actualizar transacción actual SIN hacer rerun
+                if selected_id:
+                    st.session_state.transaccion_actual = selected_id
             
             with col2:
-                if st.button("🎯 Usar para Asientos", use_container_width=True) and selected_id:
-                    st.session_state.transaccion_actual = selected_id
-                    st.success(f"✅ Transacción {selected_id} seleccionada")
-                    st.balloons()
-                    st.rerun()
+                if st.button("✏️ Modificar", type="primary", use_container_width=True, disabled=not selected_id):
+                    if selected_id:
+                        selected_transaction = next((t for t in filtered_transactions if t['id_transaccion'] == selected_id), None)
+                        if selected_transaction:
+                            on_edit_click(selected_id, selected_transaction)
+                            st.rerun()
             
             with col3:
-                if st.button("✏️ Modificar", type="secondary", use_container_width=True) and selected_id:
-                    selected_transaction = next((t for t in filtered_transactions if t['id_transaccion'] == selected_id), None)
-                    if selected_transaction:
-                        st.session_state.edit_transaction_id = selected_id
-                        st.session_state.edit_transaction_data = selected_transaction
-                        st.rerun()
+                if st.button("🗑️ Eliminar", type="secondary", use_container_width=True, disabled=not selected_id):
+                    if selected_id:
+                        on_delete_click(selected_id)
             
-            with col4:
-                if st.button("🗑️ Eliminar", type="secondary", use_container_width=True) and selected_id:
-                    if st.checkbox(f"⚠️ Confirmar eliminación de ID {selected_id}", key=f"confirm_del_{selected_id}"):
-                        delete_transaction(backend_url, selected_id)
+            # Mostrar confirmación fuera de las columnas
+            if 'confirm_delete_id' in st.session_state and st.session_state.confirm_delete_id:
+                st.warning(f"⚠️ ¿Confirmas eliminar la transacción ID {st.session_state.confirm_delete_id}?")
+                col_conf1, col_conf2, col_conf3 = st.columns([2, 1, 1])
+                with col_conf2:
+                    if st.button("✅ Sí, Eliminar", type="primary", key="confirm_yes"):
+                        delete_transaction(backend_url, st.session_state.confirm_delete_id)
+                        st.session_state.confirm_delete_id = None
+                with col_conf3:
+                    if st.button("❌ Cancelar", key="confirm_no"):
+                        st.session_state.confirm_delete_id = None
+                        st.rerun()
         else:
             st.error(f"❌ Error al cargar transacciones: {response.text}")
             
@@ -481,57 +521,33 @@ def show_transaction_summary(backend_url: str):
             
             st.markdown("---")
             
-            # Gráficos con plotly para mejor visualización
-            col1, col2 = st.columns(2)
+            # Gráfico de distribución por tipo (pantalla completa)
+            st.markdown("#### 📊 Distribución por Tipo")
+            tipo_count = df['tipo'].value_counts().reset_index()
+            tipo_count.columns = ['Tipo', 'Cantidad']
             
-            with col1:
-                st.markdown("#### 📊 Distribución por Tipo")
-                tipo_count = df['tipo'].value_counts().reset_index()
-                tipo_count.columns = ['Tipo', 'Cantidad']
-                
-                fig_tipo = px.pie(
-                    tipo_count,
-                    values='Cantidad',
-                    names='Tipo',
-                    color='Tipo',
-                    color_discrete_map={'INGRESO': '#28a745', 'EGRESO': '#dc3545'},
-                    hole=0.4
-                )
-                fig_tipo.update_traces(textposition='inside', textinfo='percent+label+value')
-                fig_tipo.update_layout(
-                    showlegend=True,
-                    height=300,
-                    margin=dict(t=0, b=0, l=0, r=0)
-                )
-                st.plotly_chart(fig_tipo, use_container_width=True)
+            fig_tipo = px.pie(
+                tipo_count,
+                values='Cantidad',
+                names='Tipo',
+                color='Tipo',
+                color_discrete_map={'INGRESO': '#28a745', 'EGRESO': '#dc3545'},
+                hole=0.4
+            )
+            fig_tipo.update_traces(textposition='inside', textinfo='percent+label+value')
+            fig_tipo.update_layout(
+                showlegend=True,
+                height=400,
+                margin=dict(t=20, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig_tipo, use_container_width=True)
             
-            with col2:
-                st.markdown("#### 💱 Distribución por Moneda")
-                moneda_count = df['moneda'].value_counts().reset_index()
-                moneda_count.columns = ['Moneda', 'Cantidad']
-                
-                fig_moneda = px.bar(
-                    moneda_count,
-                    x='Moneda',
-                    y='Cantidad',
-                    color='Moneda',
-                    text='Cantidad',
-                    color_discrete_sequence=px.colors.qualitative.Set3
-                )
-                fig_moneda.update_traces(texttemplate='%{text}', textposition='outside')
-                fig_moneda.update_layout(
-                    showlegend=False,
-                    height=300,
-                    margin=dict(t=20, b=0, l=0, r=0),
-                    yaxis_title='Cantidad de Transacciones',
-                    xaxis_title=''
-                )
-                st.plotly_chart(fig_moneda, use_container_width=True)
+            st.markdown("---")
             
             # Gráfico de tendencia temporal
             if 'fecha_transaccion' in df.columns:
                 st.markdown("#### 📈 Tendencia Temporal")
-                df['fecha'] = pd.to_datetime(df['fecha_transaccion'], format='ISO8601').dt.date
+                df['fecha'] = pd.to_datetime(df['fecha_transaccion']).dt.date
                 tendencia = df.groupby(['fecha', 'tipo']).size().reset_index(name='cantidad')
                 
                 fig_tendencia = px.line(
@@ -594,25 +610,3 @@ def delete_transaction(backend_url: str, transaction_id: int):
     except requests.exceptions.RequestException as e:
         st.error(f"❌ Error de conexión: {str(e)}")
 
-def edit_transaction(backend_url: str, transaction_id: int, transaction_data: dict):
-    """Modificar una transacción existente"""
-    try:
-        response = requests.put(
-            f"{backend_url}/api/transacciones/{transaction_id}", 
-            json=transaction_data, 
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            st.success(f"✅ Transacción {transaction_id} modificada exitosamente")
-            # Limpiar el estado de edición
-            if 'edit_transaction_id' in st.session_state:
-                del st.session_state.edit_transaction_id
-            if 'edit_transaction_data' in st.session_state:
-                del st.session_state.edit_transaction_data
-            st.rerun()
-        else:
-            st.error(f"❌ Error al modificar transacción: {response.text}")
-            
-    except requests.exceptions.RequestException as e:
-        st.error(f"❌ Error de conexión: {str(e)}")
