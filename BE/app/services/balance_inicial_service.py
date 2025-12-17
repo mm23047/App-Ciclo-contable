@@ -96,7 +96,7 @@ def obtener_balances_por_periodo(db: Session, periodo_id: int) -> List[Dict]:
     resultado = []
     for balance, codigo, nombre, tipo in balances:
         resultado.append({
-            "id_balance": balance.id_balance_inicial,
+            "id_balance_inicial": balance.id_balance_inicial,
             "id_cuenta": balance.id_cuenta,
             "codigo_cuenta": codigo,
             "nombre_cuenta": nombre,
@@ -185,6 +185,33 @@ def eliminar_balance_inicial(db: Session, balance_id: int, usuario: str) -> bool
             detail=f"Error al eliminar balance inicial: {str(e)}"
         )
 
+def eliminar_balances_periodo(db: Session, periodo_id: int, usuario: str) -> int:
+    """
+    Eliminar (desactivar) todos los balances iniciales de un período
+    """
+    try:
+        balances = db.query(BalanceInicial).filter(
+            BalanceInicial.id_periodo == periodo_id,
+            BalanceInicial.estado_balance == 'ACTIVO'
+        ).all()
+        
+        cantidad_eliminados = len(balances)
+        
+        for balance in balances:
+            balance.estado_balance = 'INACTIVO'
+            balance.fecha_modificacion = date.today()
+            balance.usuario_modificacion = usuario
+        
+        db.commit()
+        return cantidad_eliminados
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al eliminar balances del período: {str(e)}"
+        )
+
+
 def generar_balances_desde_periodo_anterior(
     db: Session, 
     periodo_actual_id: int, 
@@ -243,8 +270,9 @@ def generar_balances_desde_periodo_anterior(
                     id_cuenta=balance_anterior.id_cuenta,
                     id_periodo=periodo_actual_id,
                     saldo_inicial=balance_anterior.saldo_inicial,  # Simplificado
+                    naturaleza_saldo=balance_anterior.naturaleza_saldo,
                     observaciones=f"Generado automáticamente desde período {periodo_anterior.descripcion}",
-                    fecha_creacion=date.today(),
+                    fecha_registro=date.today(),
                     usuario_creacion=usuario,
                     estado_balance='ACTIVO'
                 )

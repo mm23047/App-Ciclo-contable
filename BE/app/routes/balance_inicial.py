@@ -21,7 +21,7 @@ router = APIRouter(
     tags=["Balance Inicial"]
 )
 
-@router.post("/", response_model=BalanceInicialResponse)
+@router.post("/", response_model=BalanceInicialResponse, status_code=status.HTTP_201_CREATED)
 def crear_balance(
     balance: BalanceInicialCreate,
     db: Session = Depends(get_db)
@@ -54,6 +54,19 @@ def eliminar_balance(
     """Eliminar (desactivar) balance inicial"""
     eliminar_balance_inicial(db, balance_id, "API_USER")
     return {"message": "Balance inicial eliminado exitosamente"}
+
+@router.delete("/periodo/{periodo_id}")
+def eliminar_balances_periodo(
+    periodo_id: int,
+    db: Session = Depends(get_db)
+):
+    """Eliminar todos los balances iniciales de un período"""
+    from app.services.balance_inicial_service import eliminar_balances_periodo
+    cantidad_eliminados = eliminar_balances_periodo(db, periodo_id, "API_USER")
+    return {
+        "message": "Balances iniciales eliminados exitosamente",
+        "cantidad_eliminados": cantidad_eliminados
+    }
 
 @router.post("/generar-desde-anterior")
 def generar_balances_automaticos(

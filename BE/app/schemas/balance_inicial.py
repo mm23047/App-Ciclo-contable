@@ -39,6 +39,7 @@ class BalanceInicialCreate(BalanceInicialBase):
 class BalanceInicialUpdate(BaseModel):
     """Schema para actualizar un balance inicial existente"""
     saldo_inicial: Optional[Decimal] = Field(None, description="Nuevo saldo inicial", decimal_places=2)
+    naturaleza_saldo: Optional[str] = Field(None, pattern="^(DEUDOR|ACREEDOR)$", description="Naturaleza del saldo")
     observaciones: Optional[str] = Field(None, max_length=500, description="Observaciones actualizadas")
     estado_balance: Optional[EstadoBalance] = Field(None, description="Estado del balance")
 
@@ -51,7 +52,7 @@ class BalanceInicialUpdate(BaseModel):
 
 class BalanceInicialResponse(BalanceInicialBase):
     """Schema para respuesta de balance inicial"""
-    id_balance: int = Field(..., description="ID único del balance")
+    id_balance_inicial: int = Field(..., description="ID único del balance")
     estado_balance: EstadoBalance = Field(..., description="Estado del balance")
     fecha_creacion: date = Field(..., description="Fecha de creación")
     usuario_creacion: str = Field(..., description="Usuario que creó el balance")

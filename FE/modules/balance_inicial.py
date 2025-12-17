@@ -33,7 +33,7 @@ def configurar_saldos_iniciales(backend_url: str):
     
     # Obtener períodos disponibles
     try:
-        response_periodos = requests.get(f"{backend_url}/api/periodos")
+        response_periodos = requests.get(f"{backend_url}/api/periodos/")
         periodos = response_periodos.json() if response_periodos.status_code == 200 else []
     except:
         periodos = []
@@ -54,33 +54,27 @@ def configurar_saldos_iniciales(backend_url: str):
     periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
     
     if periodo_obj:
-        # Opciones de configuración
-        col1, col2 = st.columns(2)
+        # Botón de refrescar
+        if st.button("🔄 Refrescar datos", help="Actualizar información de saldos"):
+            st.rerun()
         
-        with col1:
-            modo_configuracion = st.radio(
-                "Modo de configuración:",
-                ["Configuración individual", "Carga masiva"],
-                help="Individual: una cuenta a la vez. Masiva: múltiples cuentas"
-            )
-        
-        with col2:
-            if st.button("🔄 Refrescar datos", help="Actualizar información de saldos"):
-                st.rerun()
-        
-        if modo_configuracion == "Configuración individual":
-            configuracion_individual(backend_url, periodo_obj)
-        else:
-            carga_masiva_saldos(backend_url, periodo_obj)
+        # Mostrar solo configuración individual
+        configuracion_individual(backend_url, periodo_obj)
 
 def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
     """Configuración individual de saldos"""
     
     st.markdown("### 📝 Configuración Individual")
     
+    # Inicializar estado de sesión
+    if 'cuenta_seleccionada_id' not in st.session_state:
+        st.session_state.cuenta_seleccionada_id = None
+    if 'modo_edicion_balance' not in st.session_state:
+        st.session_state.modo_edicion_balance = False
+    
     # Obtener cuentas que aceptan movimientos
     try:
-        response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
+        response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas/")
         cuentas = response_cuentas.json() if response_cuentas.status_code == 200 else []
         cuentas_disponibles = [c for c in cuentas if c['acepta_movimientos']]
     except:
@@ -90,80 +84,155 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
         st.warning("No hay cuentas disponibles para configurar saldos iniciales")
         return
     
-    # Obtener saldos iniciales existentes
+    # Obtener saldos iniciales existentes con información completa
     try:
         response_saldos = requests.get(f"{backend_url}/api/balance-inicial/periodo/{periodo['id_periodo']}")
-        saldos_existentes = {}
+        saldos_completos = {}
         if response_saldos.status_code == 200:
             try:
                 saldos_data = response_saldos.json()
-                saldos_existentes = {
-                    s['id_cuenta']: s['saldo_inicial'] 
-                    for s in saldos_data
-                }
+                for s in saldos_data:
+                    saldos_completos[s['id_cuenta']] = s
             except:
-                saldos_existentes = {}
+                saldos_completos = {}
     except:
-        saldos_existentes = {}
+        saldos_completos = {}
+    
+    # Crear opciones de cuentas
+    opciones_cuentas = [
+        f"{c['codigo_cuenta']} - {c['nombre_cuenta']} ({c['tipo_cuenta']})"
+        for c in cuentas_disponibles
+    ]
+    
+    # Selección de cuenta (fuera del form para que sea reactivo)
+    cuenta_seleccionada = st.selectbox(
+        "Seleccionar cuenta:", 
+        opciones_cuentas,
+        key='select_cuenta_balance'
+    )
+    
+    # Obtener información de la cuenta seleccionada
+    cuenta_obj = None
+    balance_existente = None
+    
+    if cuenta_seleccionada:
+        codigo_cuenta = cuenta_seleccionada.split(" - ")[0]
+        cuenta_obj = next((c for c in cuentas_disponibles if c['codigo_cuenta'] == codigo_cuenta), None)
+        
+        if cuenta_obj:
+            # Detectar cambio de cuenta y resetear modo de edición
+            if st.session_state.cuenta_seleccionada_id != cuenta_obj['id_cuenta']:
+                st.session_state.cuenta_seleccionada_id = cuenta_obj['id_cuenta']
+                st.session_state.modo_edicion_balance = False
+            
+            # Verificar si existe balance
+            balance_existente = saldos_completos.get(cuenta_obj['id_cuenta'])
+            
+            # Si la cuenta no tiene balance, asegurar que no esté en modo edición
+            if balance_existente is None:
+                st.session_state.modo_edicion_balance = False
+    
+    # Determinar valores por defecto basados en si existe balance
+    if balance_existente:
+        default_saldo = float(balance_existente['saldo_inicial'])
+        default_naturaleza = balance_existente['naturaleza_saldo']
+        default_observaciones = balance_existente.get('observaciones', '')
+    else:
+        default_saldo = 0.0
+        default_naturaleza = "DEUDOR"
+        default_observaciones = ""
     
     # Formulario de configuración
     with st.form("form_saldo_individual", clear_on_submit=False):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            # Selección de cuenta
-            opciones_cuentas = [
-                f"{c['codigo_cuenta']} - {c['nombre_cuenta']} ({c['tipo_cuenta']})"
-                for c in cuentas_disponibles
-            ]
-            cuenta_seleccionada = st.selectbox("Seleccionar cuenta:", opciones_cuentas)
-            
-            # Obtener información de la cuenta seleccionada
-            if cuenta_seleccionada:
-                codigo_cuenta = cuenta_seleccionada.split(" - ")[0]
-                cuenta_obj = next((c for c in cuentas_disponibles if c['codigo_cuenta'] == codigo_cuenta), None)
-                
-                if cuenta_obj:
-                    # Mostrar información de la cuenta
-                    st.info(f"📋 **Tipo:** {cuenta_obj['tipo_cuenta']} | **Código:** {cuenta_obj['codigo_cuenta']}")
-                    
-                    # Saldo actual si existe
-                    saldo_actual = saldos_existentes.get(cuenta_obj['id_cuenta'], 0)
-                    if saldo_actual != 0:
-                        st.warning(f"⚠️ Esta cuenta ya tiene un saldo inicial configurado: ${saldo_actual:,.2f}")
-        
-        with col2:
-            # Valor del saldo inicial
+            # Valor del saldo inicial (prellenado si existe balance)
             saldo_inicial = st.number_input(
                 "Saldo inicial ($):",
+                value=default_saldo,
                 step=0.01,
                 format="%.2f",
-                help="Valor del saldo inicial para esta cuenta"
+                help="Valor del saldo inicial para esta cuenta",
+                disabled=balance_existente is not None and not st.session_state.modo_edicion_balance
             )
-            
-            # Naturaleza del saldo
+        
+        with col2:
+            # Naturaleza del saldo (prellenada si existe balance)
+            naturaleza_index = 0 if default_naturaleza == "DEUDOR" else 1
             naturaleza_saldo = st.selectbox(
                 "Naturaleza del saldo:",
                 ["DEUDOR", "ACREEDOR"],
-                help="Indica si el saldo es deudor o acreedor"
-            )
-            
-            # Observaciones opcionales
-            observaciones = st.text_area(
-                "Observaciones (opcional):",
-                height=80,
-                help="Observaciones adicionales del saldo inicial"
+                index=naturaleza_index,
+                help="Indica si el saldo es deudor o acreedor",
+                disabled=balance_existente is not None and not st.session_state.modo_edicion_balance
             )
         
-        # Botón para guardar
-        submitted = st.form_submit_button(
-            "💾 Configurar Saldo Inicial",
-            width="stretch",
-            type="primary"
+        # Observaciones (prellenadas si existen)
+        observaciones = st.text_area(
+            "Observaciones (opcional):",
+            value=default_observaciones,
+            height=80,
+            help="Observaciones adicionales del saldo inicial",
+            disabled=balance_existente is not None and not st.session_state.modo_edicion_balance
         )
         
-        if submitted and cuenta_obj:
+        # Botones de acción
+        if balance_existente:
+            # Cuenta CON balance existente
+            if not st.session_state.modo_edicion_balance:
+                # Modo visualización: solo botón Editar
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+                with col_btn2:
+                    editar_clicked = st.form_submit_button(
+                        "✏️ Editar",
+                        use_container_width=True,
+                        type="primary"
+                    )
+                actualizar_clicked = False
+                cancelar_clicked = False
+                guardar_clicked = False
+            else:
+                # Modo edición: botones Actualizar y Cancelar
+                col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+                with col_btn1:
+                    actualizar_clicked = st.form_submit_button(
+                        "✅ Actualizar",
+                        use_container_width=True,
+                        type="primary"
+                    )
+                with col_btn3:
+                    cancelar_clicked = st.form_submit_button(
+                        "❌ Cancelar",
+                        use_container_width=True
+                    )
+                editar_clicked = False
+                guardar_clicked = False
+        else:
+            # Cuenta SIN balance: solo botón Guardar
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+            with col_btn2:
+                guardar_clicked = st.form_submit_button(
+                    "💾 Guardar",
+                    use_container_width=True,
+                    type="primary"
+                )
+            editar_clicked = False
+            actualizar_clicked = False
+            cancelar_clicked = False
+        
+        # Procesar acciones
+        if editar_clicked:
+            st.session_state.modo_edicion_balance = True
+            st.rerun()
+        
+        if cancelar_clicked:
+            st.session_state.modo_edicion_balance = False
+            st.rerun()
+        
+        if guardar_clicked and cuenta_obj:
             if saldo_inicial != 0:
+                # Crear nuevo balance
                 configurar_saldo_individual(
                     backend_url,
                     periodo['id_periodo'],
@@ -174,6 +243,27 @@ def configuracion_individual(backend_url: str, periodo: Dict[str, Any]):
                 )
             else:
                 st.warning("⚠️ Ingresa un saldo inicial diferente de cero")
+        
+        if actualizar_clicked and cuenta_obj and balance_existente:
+            if saldo_inicial != 0:
+                # Resetear modo de edición ANTES de actualizar
+                st.session_state.modo_edicion_balance = False
+                # Actualizar balance existente
+                actualizar_saldo_individual(
+                    backend_url,
+                    balance_existente['id_balance_inicial'],
+                    saldo_inicial,
+                    naturaleza_saldo,
+                    observaciones
+                )
+            else:
+                st.warning("⚠️ Ingresa un saldo inicial diferente de cero")
+    
+    # Mostrar indicador de modo
+    if st.session_state.modo_edicion_balance and balance_existente:
+        st.info("✏️ **Modo edición activado** - Puedes modificar los campos y guardar los cambios")
+    elif balance_existente:
+        st.info("👁️ **Modo visualización** - Haz clic en 'Editar' para modificar los valores")
 
 def configurar_saldo_individual(
     backend_url: str,
@@ -196,11 +286,11 @@ def configurar_saldo_individual(
         
         with st.spinner("Configurando saldo inicial..."):
             response = requests.post(
-                f"{backend_url}/api/balance-inicial",
+                f"{backend_url}/api/balance-inicial/",
                 json=datos_saldo
             )
         
-        if response.status_code == 201:
+        if response.status_code in [200, 201]:
             st.success("✅ Saldo inicial configurado exitosamente!")
             st.rerun()
         else:
@@ -215,351 +305,42 @@ def configurar_saldo_individual(
     except Exception as e:
         st.error(f"❌ Error inesperado: {e}")
 
-def carga_masiva_saldos(backend_url: str, periodo: Dict[str, Any]):
-    """Carga masiva de saldos iniciales"""
-    
-    st.markdown("### 📊 Carga Masiva de Saldos")
-    
-    # Pestañas para diferentes métodos de carga
-    tab_plantilla, tab_manual = st.tabs(["📋 Usar Plantilla", "✏️ Ingreso Manual"])
-    
-    with tab_plantilla:
-        carga_con_plantilla(backend_url, periodo)
-    
-    with tab_manual:
-        carga_manual_multiple(backend_url, periodo)
-
-def carga_con_plantilla(backend_url: str, periodo: Dict[str, Any]):
-    """Carga masiva usando plantilla"""
-    
-    st.markdown("#### 📋 Carga mediante Plantilla Excel/CSV")
-    
-    # Generar plantilla
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📥 Descargar Plantilla", width="stretch"):
-            generar_plantilla_saldos(backend_url)
-    
-    with col2:
-        st.info("💡 Descarga la plantilla, complétala con los saldos y súbela")
-    
-    # Subir archivo
-    uploaded_file = st.file_uploader(
-        "Subir archivo de saldos:",
-        type=['csv', 'xlsx'],
-        help="Archivo con formato: codigo_cuenta, saldo_inicial, descripcion"
-    )
-    
-    if uploaded_file is not None:
-        try:
-            # Leer archivo
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            
-            # Validar estructura
-            columnas_requeridas = ['codigo_cuenta', 'saldo_inicial']
-            if all(col in df.columns for col in columnas_requeridas):
-                
-                # Preview de datos
-                st.markdown("**Vista previa de datos:**")
-                st.dataframe(df.head(10))
-                
-                if st.button("📊 Procesar Carga Masiva"):
-                    procesar_carga_masiva(backend_url, periodo['id_periodo'], df)
-                    
-            else:
-                st.error("❌ El archivo debe contener las columnas: codigo_cuenta, saldo_inicial")
-                
-        except Exception as e:
-            st.error(f"❌ Error al leer archivo: {e}")
-
-def generar_plantilla_saldos(backend_url: str):
-    """Generar plantilla para carga masiva"""
+def actualizar_saldo_individual(
+    backend_url: str,
+    id_balance: int,
+    saldo_inicial: float,
+    naturaleza_saldo: str,
+    observaciones: str
+):
+    """Actualizar saldo inicial existente"""
     
     try:
-        # Obtener cuentas que aceptan movimientos
-        response = requests.get(f"{backend_url}/api/catalogo-cuentas")
+        datos_actualizacion = {
+            "saldo_inicial": saldo_inicial,
+            "naturaleza_saldo": naturaleza_saldo,
+            "observaciones": observaciones if observaciones else None
+        }
+        
+        with st.spinner("Actualizando saldo inicial..."):
+            response = requests.put(
+                f"{backend_url}/api/balance-inicial/{id_balance}",
+                json=datos_actualizacion
+            )
         
         if response.status_code == 200:
-            try:
-                cuentas = response.json()
-                cuentas_movimientos = [c for c in cuentas if c['acepta_movimientos']]
-            except:
-                st.error("❌ Error al procesar cuentas del catálogo")
-                return None
-            
-            # Crear DataFrame de plantilla
-            plantilla_data = []
-            for cuenta in cuentas_movimientos[:50]:  # Limitar a 50 para demo
-                plantilla_data.append({
-                    'codigo_cuenta': cuenta['codigo_cuenta'],
-                    'nombre_cuenta': cuenta['nombre_cuenta'],
-                    'tipo_cuenta': cuenta['tipo_cuenta'],
-                    'saldo_inicial': 0.00,
-                    'descripcion': ''
-                })
-            
-            df_plantilla = pd.DataFrame(plantilla_data)
-            csv = df_plantilla.to_csv(index=False)
-            
-            st.download_button(
-                label="📥 Descargar Plantilla CSV",
-                data=csv,
-                file_name=f"plantilla_saldos_iniciales_{datetime.now().strftime('%Y%m%d')}.csv",
-                mime="text/csv"
-            )
-            
-    except Exception as e:
-        st.error(f"Error al generar plantilla: {e}")
-
-def carga_manual_multiple(backend_url: str, periodo: Dict[str, Any]):
-    """Carga manual de múltiples saldos"""
-    
-    st.markdown("#### ✏️ Ingreso Manual Múltiple")
-    
-    # Obtener cuentas
-    try:
-        response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
-        cuentas = response_cuentas.json() if response_cuentas.status_code == 200 else []
-        cuentas_disponibles = [c for c in cuentas if c['acepta_movimientos']]
-    except:
-        cuentas_disponibles = []
-    
-    if not cuentas_disponibles:
-        st.warning("No hay cuentas disponibles")
-        return
-    
-    # Gestión de saldos múltiples
-    if 'saldos_multiples' not in st.session_state:
-        st.session_state.saldos_multiples = []
-    
-    # Formulario para agregar saldo
-    with st.expander("➕ Agregar Saldo", expanded=True):
-        col1, col2, col3, col4 = st.columns([3, 1, 2, 1])
-        
-        with col1:
-            opciones_cuentas = [
-                f"{c['codigo_cuenta']} - {c['nombre_cuenta']}"
-                for c in cuentas_disponibles
-            ]
-            cuenta_multiple = st.selectbox("Cuenta:", opciones_cuentas, key="cuenta_multiple")
-        
-        with col2:
-            saldo_multiple = st.number_input("Saldo:", step=0.01, key="saldo_multiple")
-        
-        with col3:
-            desc_multiple = st.text_input("Descripción:", key="desc_multiple")
-        
-        with col4:
-            st.write("")  # Espaciado
-            if st.button("➕", help="Agregar saldo"):
-                if cuenta_multiple and saldo_multiple != 0:
-                    codigo_cuenta = cuenta_multiple.split(" - ")[0]
-                    cuenta_obj = next((c for c in cuentas_disponibles if c['codigo_cuenta'] == codigo_cuenta), None)
-                    
-                    # Verificar si ya existe
-                    ya_existe = any(s['id_cuenta'] == cuenta_obj['id_cuenta'] for s in st.session_state.saldos_multiples)
-                    
-                    if not ya_existe:
-                        nuevo_saldo = {
-                            'id_cuenta': cuenta_obj['id_cuenta'],
-                            'codigo_cuenta': codigo_cuenta,
-                            'nombre_cuenta': cuenta_obj['nombre_cuenta'],
-                            'tipo_cuenta': cuenta_obj['tipo_cuenta'],
-                            'saldo_inicial': saldo_multiple,
-                            'descripcion': desc_multiple
-                        }
-                        
-                        st.session_state.saldos_multiples.append(nuevo_saldo)
-                        st.rerun()
-                    else:
-                        st.error("Esta cuenta ya está en la lista")
-    
-    # Mostrar saldos agregados
-    if st.session_state.saldos_multiples:
-        st.markdown("### 📋 Saldos a Configurar")
-        
-        for i, saldo in enumerate(st.session_state.saldos_multiples):
-            col1, col2, col3, col4, col5 = st.columns([2, 3, 1, 1, 1])
-            
-            with col1:
-                st.text(saldo['codigo_cuenta'])
-            
-            with col2:
-                st.text(saldo['nombre_cuenta'])
-            
-            with col3:
-                st.text(saldo['tipo_cuenta'])
-            
-            with col4:
-                st.text(f"${saldo['saldo_inicial']:,.2f}")
-            
-            with col5:
-                if st.button("🗑️", key=f"eliminar_saldo_{i}", help="Eliminar"):
-                    st.session_state.saldos_multiples.pop(i)
-                    st.rerun()
-        
-        # Resumen
-        total_activos = sum(s['saldo_inicial'] for s in st.session_state.saldos_multiples if s['tipo_cuenta'] == 'Activo')
-        total_pasivos = sum(s['saldo_inicial'] for s in st.session_state.saldos_multiples if s['tipo_cuenta'] == 'Pasivo')
-        total_capital = sum(s['saldo_inicial'] for s in st.session_state.saldos_multiples if s['tipo_cuenta'] == 'Capital')
-        
-        st.markdown("### 📊 Resumen")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Activos", f"${total_activos:,.2f}")
-        
-        with col2:
-            st.metric("Pasivos", f"${total_pasivos:,.2f}")
-        
-        with col3:
-            st.metric("Capital", f"${total_capital:,.2f}")
-        
-        with col4:
-            diferencia = total_activos - total_pasivos - total_capital
-            st.metric("Diferencia", f"${diferencia:,.2f}")
-        
-        # Validación de ecuación contable
-        if abs(diferencia) > 0.01:
-            st.warning("⚠️ ADVERTENCIA: La ecuación contable no está balanceada (Activos = Pasivos + Capital)")
+            st.success("✅ Saldo inicial actualizado exitosamente!")
+            st.rerun()
         else:
-            st.success("✅ Ecuación contable balanceada")
-        
-        # Botón para procesar
-        if st.button("💾 Configurar Todos los Saldos", width="stretch", type="primary"):
-            procesar_saldos_multiples(backend_url, periodo['id_periodo'], st.session_state.saldos_multiples)
-
-def procesar_carga_masiva(backend_url: str, id_periodo: int, df: pd.DataFrame):
-    """Procesar carga masiva de saldos"""
-    
-    try:
-        # Obtener información de cuentas
-        response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
-        cuentas = response_cuentas.json() if response_cuentas.status_code == 200 else []
-        cuentas_dict = {c['codigo_cuenta']: c for c in cuentas}
-        
-        resultados = {"exitosos": 0, "errores": 0, "detalles_errores": []}
-        
-        with st.spinner(f"Procesando {len(df)} registros..."):
-            for index, row in df.iterrows():
-                try:
-                    codigo_cuenta = str(row['codigo_cuenta']).strip()
-                    saldo_inicial = float(row['saldo_inicial'])
-                    descripcion = str(row.get('descripcion', '')).strip() if pd.notna(row.get('descripcion')) else None
-                    
-                    if codigo_cuenta in cuentas_dict and saldo_inicial != 0:
-                        # Determinar naturaleza del saldo según tipo de cuenta
-                        tipo_cuenta = cuentas_dict[codigo_cuenta].get('tipo_cuenta', '')
-                        if tipo_cuenta in ['Activo', 'Egreso']:
-                            naturaleza_saldo = 'DEUDOR' if saldo_inicial > 0 else 'ACREEDOR'
-                        else:  # Pasivo, Capital, Ingreso
-                            naturaleza_saldo = 'ACREEDOR' if saldo_inicial > 0 else 'DEUDOR'
-                        
-                        datos_saldo = {
-                            "id_periodo": id_periodo,
-                            "id_cuenta": cuentas_dict[codigo_cuenta]['id_cuenta'],
-                            "saldo_inicial": abs(saldo_inicial),
-                            "naturaleza_saldo": naturaleza_saldo,
-                            "observaciones": descripcion
-                        }
-                        
-                        response = requests.post(f"{backend_url}/api/balance-inicial", json=datos_saldo)
-                        
-                        if response.status_code == 201:
-                            resultados["exitosos"] += 1
-                        else:
-                            resultados["errores"] += 1
-                            try:
-                                error_msg = response.json().get('detail', 'Error')
-                            except:
-                                error_msg = f'Error HTTP {response.status_code}'
-                            resultados["detalles_errores"].append(f"Fila {index+1}: {error_msg}")
-                    else:
-                        resultados["errores"] += 1
-                        resultados["detalles_errores"].append(f"Fila {index+1}: Cuenta '{codigo_cuenta}' no encontrada o saldo cero")
-                        
-                except Exception as e:
-                    resultados["errores"] += 1
-                    resultados["detalles_errores"].append(f"Fila {index+1}: {str(e)}")
-        
-        # Mostrar resultados
-        if resultados["exitosos"] > 0:
-            st.success(f"✅ {resultados['exitosos']} saldos configurados exitosamente")
-        
-        if resultados["errores"] > 0:
-            st.error(f"❌ {resultados['errores']} errores encontrados")
-            with st.expander("Ver detalles de errores"):
-                for error in resultados["detalles_errores"]:
-                    st.text(error)
-        
-        if resultados["exitosos"] > 0:
-            st.rerun()
+            try:
+                error_detail = response.json().get('detail', 'Error desconocido')
+            except:
+                error_detail = response.text if response.text else f'Error HTTP {response.status_code}'
+            st.error(f"❌ Error al actualizar saldo: {error_detail}")
             
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Error de conexión: {e}")
     except Exception as e:
-        st.error(f"Error al procesar carga masiva: {e}")
-
-def procesar_saldos_multiples(backend_url: str, id_periodo: int, saldos: List[Dict]):
-    """Procesar saldos múltiples"""
-    
-    try:
-        resultados = {"exitosos": 0, "errores": 0, "detalles_errores": []}
-        
-        with st.spinner(f"Configurando {len(saldos)} saldos..."):
-            for saldo in saldos:
-                try:
-                    # Determinar naturaleza del saldo según tipo de cuenta
-                    tipo_cuenta = saldo.get('tipo_cuenta', '')
-                    saldo_valor = saldo['saldo_inicial']
-                    if tipo_cuenta in ['Activo', 'Egreso']:
-                        naturaleza_saldo = 'DEUDOR' if saldo_valor > 0 else 'ACREEDOR'
-                    else:  # Pasivo, Capital, Ingreso
-                        naturaleza_saldo = 'ACREEDOR' if saldo_valor > 0 else 'DEUDOR'
-                    
-                    datos_saldo = {
-                        "id_periodo": id_periodo,
-                        "id_cuenta": saldo['id_cuenta'],
-                        "saldo_inicial": abs(saldo_valor),
-                        "naturaleza_saldo": naturaleza_saldo,
-                        "observaciones": saldo['descripcion'] if saldo['descripcion'] else None
-                    }
-                    
-                    response = requests.post(f"{backend_url}/api/balance-inicial", json=datos_saldo)
-                    
-                    if response.status_code == 201:
-                        resultados["exitosos"] += 1
-                    else:
-                        resultados["errores"] += 1
-                        try:
-                            error_msg = response.json().get('detail', 'Error')
-                        except:
-                            error_msg = f'Error HTTP {response.status_code}'
-                        resultados["detalles_errores"].append(
-                            f"{saldo['codigo_cuenta']}: {error_msg}"
-                        )
-                except Exception as e:
-                    resultados["errores"] += 1
-                    resultados["detalles_errores"].append(f"{saldo['codigo_cuenta']}: {str(e)}")
-        
-        # Mostrar resultados
-        if resultados["exitosos"] > 0:
-            st.success(f"✅ {resultados['exitosos']} saldos configurados exitosamente")
-            st.session_state.saldos_multiples = []  # Limpiar lista
-        
-        if resultados["errores"] > 0:
-            st.error(f"❌ {resultados['errores']} errores encontrados")
-            with st.expander("Ver detalles de errores"):
-                for error in resultados["detalles_errores"]:
-                    st.text(error)
-        
-        if resultados["exitosos"] > 0:
-            st.rerun()
-            
-    except Exception as e:
-        st.error(f"Error al procesar saldos múltiples: {e}")
+        st.error(f"❌ Error inesperado: {e}")
 
 def consultar_balance_inicial(backend_url: str):
     """Consultar balance inicial configurado"""
@@ -568,7 +349,7 @@ def consultar_balance_inicial(backend_url: str):
     
     # Selección de período
     try:
-        response_periodos = requests.get(f"{backend_url}/api/periodos")
+        response_periodos = requests.get(f"{backend_url}/api/periodos/")
         periodos = response_periodos.json() if response_periodos.status_code == 200 else []
         
         if periodos:
@@ -603,15 +384,8 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
     """Mostrar balance inicial"""
     
     try:
-        # Construir parámetros
-        params = {}
-        if tipo_filtro != "Todos":
-            params["tipo_cuenta"] = tipo_filtro
-        if solo_con_saldo:
-            params["solo_con_saldo"] = True
-        
         with st.spinner("Consultando balance inicial..."):
-            response = requests.get(f"{backend_url}/api/balance-inicial/periodo/{id_periodo}", params=params)
+            response = requests.get(f"{backend_url}/api/balance-inicial/periodo/{id_periodo}")
         
         if response.status_code == 200:
             try:
@@ -623,6 +397,31 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
             if saldos:
                 # Convertir a DataFrame
                 df_saldos = pd.DataFrame(saldos)
+                
+                # Asegurar que existan todas las columnas necesarias
+                columnas_requeridas = {
+                    'codigo_cuenta': '',
+                    'nombre_cuenta': '',
+                    'tipo_cuenta': '',
+                    'naturaleza_saldo': '',
+                    'saldo_inicial': 0.0,
+                    'fecha_creacion': None,
+                    'observaciones': None
+                }
+                for col, default in columnas_requeridas.items():
+                    if col not in df_saldos.columns:
+                        df_saldos[col] = default
+                
+                # Aplicar filtros en el frontend
+                if tipo_filtro != "Todos":
+                    df_saldos = df_saldos[df_saldos['tipo_cuenta'] == tipo_filtro]
+                
+                if solo_con_saldo:
+                    df_saldos = df_saldos[df_saldos['saldo_inicial'] != 0]
+                
+                if df_saldos.empty:
+                    st.info("📭 No hay saldos que coincidan con los filtros seleccionados")
+                    return
                 
                 # Calcular totales por tipo
                 resumen_tipos = df_saldos.groupby('tipo_cuenta')['saldo_inicial'].sum()
@@ -639,7 +438,9 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
                 activos = resumen_tipos.get('Activo', 0)
                 pasivos = resumen_tipos.get('Pasivo', 0)
                 capital = resumen_tipos.get('Capital', 0)
-                diferencia = activos - pasivos - capital
+                patrimonio = resumen_tipos.get('Patrimonio', 0)
+                capital_total = capital + patrimonio
+                diferencia = activos - pasivos - capital_total
                 
                 st.markdown("### ⚖️ Validación Ecuación Contable")
                 col1, col2, col3, col4 = st.columns(4)
@@ -651,13 +452,13 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
                     st.metric("Pasivos", f"${pasivos:,.2f}")
                 
                 with col3:
-                    st.metric("Capital", f"${capital:,.2f}")
+                    st.metric("Capital + Patrimonio", f"${capital_total:,.2f}")
                 
                 with col4:
                     st.metric("Diferencia", f"${diferencia:,.2f}")
                 
                 if abs(diferencia) > 0.01:
-                    st.error("❌ La ecuación contable no está balanceada (Activos ≠ Pasivos + Capital)")
+                    st.error("❌ La ecuación contable no está balanceada (Activos ≠ Pasivos + Capital + Patrimonio)")
                 else:
                     st.success("✅ Ecuación contable balanceada correctamente")
                 
@@ -667,40 +468,89 @@ def mostrar_balance_inicial(backend_url: str, id_periodo: int, tipo_filtro: str,
                 # Formatear para visualización
                 df_display = df_saldos.copy()
                 df_display['saldo_inicial'] = df_display['saldo_inicial'].apply(lambda x: f"${x:,.2f}")
-                df_display['fecha_configuracion'] = pd.to_datetime(df_display['fecha_configuracion']).dt.strftime('%d/%m/%Y')
+                # Formatear fecha solo si existe
+                if 'fecha_creacion' in df_display.columns and df_display['fecha_creacion'].notna().any():
+                    df_display['fecha_creacion'] = pd.to_datetime(df_display['fecha_creacion'], errors='coerce').dt.strftime('%d/%m/%Y')
+                else:
+                    df_display['fecha_creacion'] = 'N/A'
                 
                 # Seleccionar columnas a mostrar
-                columnas_mostrar = ['codigo_cuenta', 'nombre_cuenta', 'tipo_cuenta', 'saldo_inicial', 'descripcion', 'fecha_configuracion']
-                nombres_columnas = ['Código', 'Nombre Cuenta', 'Tipo', 'Saldo Inicial', 'Descripción', 'Fecha Config.']
+                columnas_mostrar = ['codigo_cuenta', 'nombre_cuenta', 'tipo_cuenta', 'naturaleza_saldo', 'saldo_inicial', 'fecha_creacion']
+                nombres_columnas = ['Código', 'Nombre Cuenta', 'Tipo', 'Naturaleza', 'Saldo Inicial', 'Fecha Config.']
                 
                 df_final = df_display[columnas_mostrar].copy()
                 df_final.columns = nombres_columnas
                 
                 st.dataframe(df_final, width="stretch", hide_index=True)
                 
-                # Opciones de descarga y edición
+                # Opciones de descarga y eliminación
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    # Descargar CSV
-                    csv = df_final.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Descargar CSV",
-                        data=csv,
-                        file_name=f"balance_inicial_{datetime.now().strftime('%Y%m%d')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    # Opción para editar saldos
-                    if st.button("✏️ Editar Saldos"):
-                        st.info("💡 Para editar saldos, ve a la pestaña 'Configurar Saldos' y actualiza las cuentas necesarias")
+                    # Descargar CSV - Obtener TODOS los balances del período sin filtros
+                    try:
+                        with st.spinner("Preparando descarga..."):
+                            response_completo = requests.get(f"{backend_url}/api/balance-inicial/periodo/{id_periodo}")
+                        
+                        if response_completo.status_code == 200:
+                            saldos_completos = response_completo.json()
+                            if saldos_completos:
+                                # Crear DataFrame para CSV con todos los datos
+                                df_csv = pd.DataFrame(saldos_completos)
+                                
+                                # Seleccionar y ordenar columnas para el CSV
+                                columnas_csv = ['codigo_cuenta', 'nombre_cuenta', 'tipo_cuenta', 'naturaleza_saldo', 'saldo_inicial', 'observaciones', 'fecha_creacion']
+                                
+                                # Asegurar que existan las columnas
+                                for col in columnas_csv:
+                                    if col not in df_csv.columns:
+                                        df_csv[col] = ''
+                                
+                                df_csv = df_csv[columnas_csv].copy()
+                                
+                                # Formatear fecha para CSV
+                                if 'fecha_creacion' in df_csv.columns:
+                                    df_csv['fecha_creacion'] = pd.to_datetime(df_csv['fecha_creacion'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S')
+                                
+                                # Renombrar columnas para el CSV (sin tildes para evitar problemas de encoding)
+                                df_csv.columns = ['Codigo Cuenta', 'Nombre Cuenta', 'Tipo Cuenta', 'Naturaleza', 'Saldo Inicial', 'Observaciones', 'Fecha Creacion']
+                                
+                                # Generar CSV con separador punto y coma para Excel en español
+                                csv_data = df_csv.to_csv(index=False, encoding='latin-1', sep=';', errors='replace')
+                                
+                                st.download_button(
+                                    label="📥 Descargar Balance (Excel)",
+                                    data=csv_data,
+                                    file_name=f"balance_inicial_periodo_{id_periodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                    mime="text/csv",
+                                    help="Descarga el balance inicial completo del período en formato Excel"
+                                )
+                            else:
+                                st.warning("No hay datos para descargar")
+                        else:
+                            st.error("Error al obtener datos para descarga")
+                    except Exception as e:
+                        st.error(f"Error al preparar descarga: {e}")
                 
                 with col3:
                     # Eliminar todos los saldos del período
-                    if st.button("🗑️ Limpiar Balance", help="Eliminar todos los saldos de este período"):
-                        if st.button("⚠️ Confirmar eliminación", type="primary"):
-                            eliminar_balance_periodo(backend_url, id_periodo)
+                    if 'confirmar_eliminar_balance' not in st.session_state:
+                        st.session_state.confirmar_eliminar_balance = False
+                    
+                    if not st.session_state.confirmar_eliminar_balance:
+                        if st.button("🗑️ Limpiar Balance", help="Eliminar todos los saldos de este período"):
+                            st.session_state.confirmar_eliminar_balance = True
+                            st.rerun()
+                    else:
+                        col_a, col_b = st.columns(2)
+                        with col_a:
+                            if st.button("⚠️ Confirmar", type="primary"):
+                                eliminar_balance_periodo(backend_url, id_periodo)
+                                st.session_state.confirmar_eliminar_balance = False
+                        with col_b:
+                            if st.button("❌ Cancelar"):
+                                st.session_state.confirmar_eliminar_balance = False
+                                st.rerun()
                 
             else:
                 st.info("📭 No hay saldos iniciales configurados para este período")
@@ -734,7 +584,7 @@ def validar_balance_inicial(backend_url: str):
     
     # Selección de período
     try:
-        response_periodos = requests.get(f"{backend_url}/api/periodos")
+        response_periodos = requests.get(f"{backend_url}/api/periodos/")
         periodos = response_periodos.json() if response_periodos.status_code == 200 else []
         
         if periodos:

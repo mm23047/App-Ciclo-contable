@@ -19,6 +19,8 @@ class BalanceInicial(Base):
     usuario_creacion = Column(String(50), nullable=False)
     observaciones = Column(Text)
     fecha_creacion = Column(DateTime, default=func.current_timestamp())
+    fecha_modificacion = Column(Date, nullable=True)
+    usuario_modificacion = Column(String(50), nullable=True)
     estado_balance = Column(String(15), default='ACTIVO')  # ACTIVO, MODIFICADO, ANULADO
     
     # Relaciones
