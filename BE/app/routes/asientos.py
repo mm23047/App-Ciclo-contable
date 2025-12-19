@@ -13,11 +13,10 @@ from typing import List, Optional
 
 router = APIRouter(prefix="/api/asientos", tags=["Asientos"])
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=AsientoRead, status_code=status.HTTP_201_CREATED)
 def crear_asiento(asiento: AsientoCreate, db: Session = Depends(get_db)):
     """Crear un nuevo asiento contable"""
-    nuevo_asiento = create_asiento(db, asiento)
-    return {"id_asiento": nuevo_asiento.id_asiento}
+    return create_asiento(db, asiento)
 
 @router.get("/", response_model=List[AsientoRead])
 def listar_asientos(

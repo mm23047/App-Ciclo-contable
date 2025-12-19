@@ -29,7 +29,19 @@ def create_asiento(db: Session, asiento_data: AsientoCreate) -> Asiento:
     if not transaccion:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Transacción no encontrada"
+            detail=f"Transacción con ID {asiento_data.id_transaccion} no encontrada"
+        )
+    
+    # Validar que el período de la transacción está ABIERTO
+    from app.models.periodo import PeriodoContable
+    periodo = db.query(PeriodoContable).filter(
+        PeriodoContable.id_periodo == transaccion.id_periodo
+    ).first()
+    
+    if periodo and periodo.estado != 'ABIERTO':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pueden crear asientos en un período {periodo.estado}. Solo se permiten períodos ABIERTOS"
         )
     
     # Validar que la cuenta existe
@@ -39,7 +51,14 @@ def create_asiento(db: Session, asiento_data: AsientoCreate) -> Asiento:
     if not cuenta:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cuenta no encontrada"
+            detail=f"Cuenta con ID {asiento_data.id_cuenta} no encontrada"
+        )
+    
+    # Validar que la cuenta está ACTIVA
+    if cuenta.estado != 'ACTIVA':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se pueden crear asientos en una cuenta {cuenta.estado}"
         )
     
     # Validar reglas de negocio
@@ -51,20 +70,20 @@ def create_asiento(db: Session, asiento_data: AsientoCreate) -> Asiento:
         db.commit()
         db.refresh(db_asiento)
         return db_asiento
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error al crear asiento contable"
+            detail=f"Error de integridad al crear asiento: {str(e)}"
         )
 
-def get_asiento(db: Session, asiento_id: int) -> Optional[Asiento]:
+def get_asiento(db: Session, asiento_id: int) -> Asiento:
     """Obtener un asiento contable específico por ID"""
     asiento = db.query(Asiento).filter(Asiento.id_asiento == asiento_id).first()
     if not asiento:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asiento contable no encontrado"
+            detail=f"Asiento contable con ID {asiento_id} no encontrado"
         )
     return asiento
 
@@ -98,7 +117,7 @@ def update_asiento(db: Session, asiento_id: int, asiento_data: AsientoUpdate) ->
         if not transaccion:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Transaction not found"
+                detail=f"Transacción con ID {update_data['id_transaccion']} no encontrada"
             )
     
     # Validate account exists if being updated
@@ -109,7 +128,7 @@ def update_asiento(db: Session, asiento_id: int, asiento_data: AsientoUpdate) ->
         if not cuenta:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Account not found"
+                detail=f"Cuenta con ID {update_data['id_cuenta']} no encontrada"
             )
     
     # Apply updates and validate business rules
@@ -122,11 +141,11 @@ def update_asiento(db: Session, asiento_id: int, asiento_data: AsientoUpdate) ->
         db.commit()
         db.refresh(asiento)
         return asiento
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error updating journal entry"
+            detail=f"Error de integridad al actualizar asiento: {str(e)}"
         )
 
 def delete_asiento(db: Session, asiento_id: int) -> bool:

@@ -405,8 +405,39 @@ def list_transactions(backend_url: str):
                 st.info("🔍 No se encontraron transacciones con los filtros aplicados")
                 return
             
+            # Configuración de paginación
+            total_transacciones = len(filtered_transactions)
+            
+            col_info, col_items = st.columns([3, 1])
+            with col_info:
+                st.info(f"📊 **Transacciones filtradas:** {total_transacciones}")
+            with col_items:
+                items_per_page = st.selectbox(
+                    "Transacciones por página:",
+                    options=[10, 20, 50, 100],
+                    index=0,  # 10 por defecto
+                    key="items_per_page_trans"
+                )
+            
+            total_pages = (total_transacciones + items_per_page - 1) // items_per_page
+            
+            # Inicializar página actual
+            if 'current_page_trans' not in st.session_state:
+                st.session_state.current_page_trans = 1
+            
+            # Ajustar página si está fuera de rango
+            if st.session_state.current_page_trans > total_pages:
+                st.session_state.current_page_trans = total_pages
+            
+            # Calcular índices
+            start_idx = (st.session_state.current_page_trans - 1) * items_per_page
+            end_idx = min(start_idx + items_per_page, total_transacciones)
+            
+            # Obtener transacciones de la página actual
+            transacciones_pagina = filtered_transactions[start_idx:end_idx]
+            
             # Convert to DataFrame for display
-            df = pd.DataFrame(filtered_transactions)
+            df = pd.DataFrame(transacciones_pagina)
             
             # Format datetime columns
             df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion']).dt.strftime('%Y-%m-%d %H:%M')
@@ -431,6 +462,37 @@ def list_transactions(backend_url: str):
                 use_container_width=True
             )
             
+            # Mostrar rango
+            st.caption(f"Mostrando transacciones {start_idx + 1} - {end_idx} de {total_transacciones}")
+            
+            # Controles de paginación (solo abajo)
+            if total_pages > 1:
+                st.markdown("---")
+                col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+                
+                with col1:
+                    if st.button("⏮️ Primera", key="first_trans", use_container_width=True, disabled=st.session_state.current_page_trans == 1):
+                        st.session_state.current_page_trans = 1
+                        st.rerun()
+                
+                with col2:
+                    if st.button("◀️ Anterior", key="prev_trans", use_container_width=True, disabled=st.session_state.current_page_trans == 1):
+                        st.session_state.current_page_trans -= 1
+                        st.rerun()
+                
+                with col3:
+                    st.markdown(f"<div style='text-align: center; padding: 8px;'><strong>Página {st.session_state.current_page_trans} de {total_pages}</strong></div>", unsafe_allow_html=True)
+                
+                with col4:
+                    if st.button("▶️ Siguiente", key="next_trans", use_container_width=True, disabled=st.session_state.current_page_trans == total_pages):
+                        st.session_state.current_page_trans += 1
+                        st.rerun()
+                
+                with col5:
+                    if st.button("⏭️ Última", key="last_trans", use_container_width=True, disabled=st.session_state.current_page_trans == total_pages):
+                        st.session_state.current_page_trans = total_pages
+                        st.rerun()
+            
             st.markdown("---")
             st.markdown("### ⚙️ Acciones")
             
@@ -441,6 +503,7 @@ def list_transactions(backend_url: str):
                 # Obtener valor por defecto (transacción actual si existe)
                 default_value = st.session_state.get('transaccion_actual', None)
                 
+                # Usar todas las transacciones filtradas para el selector (no solo las de la página)
                 selected_id = st.selectbox(
                     "Seleccionar Transacción",
                     options=[None] + [t['id_transaccion'] for t in filtered_transactions],
