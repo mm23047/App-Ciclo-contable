@@ -2,7 +2,7 @@
 Rutas FastAPI para Partidas de Ajuste.
 Endpoints para gestión de partidas de ajuste contable.
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Query, Body
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db import get_db
@@ -26,6 +26,15 @@ def crear_partida(
 ):
     """Crear una nueva partida de ajuste"""
     return create_partida_ajuste(db, partida)
+
+@router.get("/", response_model=List[PartidaAjusteRead])
+def listar_todas_partidas(
+    estado: Optional[str] = Query(None),
+    tipo_ajuste: Optional[str] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Listar todas las partidas de ajuste (sin filtro de período)"""
+    return get_partidas_ajuste(db, periodo_id=None, estado=estado, tipo_ajuste=tipo_ajuste)
 
 @router.get("/periodo/{periodo_id}", response_model=List[PartidaAjusteRead])
 def listar_partidas_periodo(
@@ -54,20 +63,20 @@ def actualizar_partida(
     """Actualizar partida de ajuste"""
     return update_partida_ajuste(db, partida_id, partida_update)
 
-@router.post("/{partida_id}/aprobar")
+@router.post("/{partida_id}/aprobar", response_model=PartidaAjusteRead)
 def aprobar_partida(
     partida_id: int,
+    usuario_aprobacion: str = Body(..., embed=True),
     db: Session = Depends(get_db)
 ):
     """Aprobar partida de ajuste"""
-    partida = aprobar_partida_ajuste(db, partida_id, "API_USER")
-    return {"message": "Partida de ajuste aprobada exitosamente"}
+    return aprobar_partida_ajuste(db, partida_id, usuario_aprobacion)
 
-@router.post("/{partida_id}/anular")
+@router.post("/{partida_id}/anular", response_model=PartidaAjusteRead)
 def anular_partida(
     partida_id: int,
+    usuario_anulacion: str = Body(..., embed=True),
     db: Session = Depends(get_db)
 ):
     """Anular partida de ajuste"""
-    partida = anular_partida_ajuste(db, partida_id, "API_USER")
-    return {"message": "Partida de ajuste anulada"}
+    return anular_partida_ajuste(db, partida_id, usuario_anulacion)

@@ -47,6 +47,7 @@ services:
       - POSTGRES_HOST=sistema_contable_db
       - POSTGRES_PORT=5432
       - LLM_API_KEY=${LLM_API_KEY}
+      - TZ=America/El_Salvador
     ports:
       - "${PORT_BE}:${PORT_BE}"
     depends_on:
@@ -63,6 +64,7 @@ services:
       - PORT_FE=${PORT_FE}
       - PORT_BE=${PORT_BE}
       - BACKEND_URL=http://sistema_contable_backend:${PORT_BE}
+      - TZ=America/El_Salvador
     ports:
       - "${PORT_FE}:${PORT_FE}"
     depends_on:

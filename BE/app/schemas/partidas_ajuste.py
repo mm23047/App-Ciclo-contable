@@ -43,7 +43,7 @@ class PartidaAjusteBase(BaseModel):
     usuario_aprobacion: Optional[str] = Field(None, max_length=50)
 
 class PartidaAjusteCreate(BaseModel):
-    numero_partida: str = Field(..., max_length=20)
+    numero_partida: Optional[str] = Field(None, max_length=20, description="Número único de partida (se genera automáticamente si no se proporciona)")
     fecha_ajuste: date
     descripcion: str = Field(..., min_length=1)
     tipo_ajuste: str = Field(..., pattern="^(DEPRECIACION|PROVISION|DEVENGO|DIFERIDO|RECLASIFICACION|CORRECCION_ERROR|AJUSTE_INVENTARIO|AJUSTE_CAMBIO|OTROS)$")

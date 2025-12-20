@@ -3,13 +3,14 @@ Capa de servicios para operaciones de Mayorización (Libro Mayor).
 Maneja la lógica de negocio para generar el libro mayor automáticamente.
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, String, literal_column
 from fastapi import HTTPException, status
 from app.models.libro_mayor import LibroMayor
 from app.models.asiento import Asiento
 from app.models.transaccion import Transaccion
 from app.models.catalogo_cuentas import CatalogoCuentas
 from app.models.periodo import PeriodoContable
+from app.models.partidas_ajuste import AsientoAjuste, PartidaAjuste
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 from datetime import date
@@ -33,62 +34,88 @@ def generar_libro_mayor_cuenta(
             detail="Cuenta no encontrada"
         )
     
-    # Construir query base
-    query = db.query(
-        Asiento.id_asiento,
+    # Query para asientos normales
+    query_asientos = db.query(
+        Asiento.id_asiento.label('id'),
         Asiento.debe,
         Asiento.haber,
-        Asiento.descripcion_asiento,
-        Transaccion.fecha_transaccion,
-        Transaccion.descripcion.label('descripcion_transaccion'),
-        Transaccion.numero_referencia
+        Asiento.descripcion_asiento.label('descripcion'),
+        Transaccion.fecha_transaccion.label('fecha'),
+        Transaccion.numero_referencia.label('referencia'),
+        literal_column("'ASIENTO'").label('tipo')
     ).join(
         Transaccion, Asiento.id_transaccion == Transaccion.id_transaccion
     ).filter(
         Asiento.id_cuenta == cuenta_id
     )
     
-    # Aplicar filtros
+    # Aplicar filtros a asientos
     if periodo_id:
-        query = query.filter(Transaccion.id_periodo == periodo_id)
+        query_asientos = query_asientos.filter(Transaccion.id_periodo == periodo_id)
     if fecha_desde:
-        query = query.filter(Transaccion.fecha_transaccion >= fecha_desde)
+        query_asientos = query_asientos.filter(Transaccion.fecha_transaccion >= fecha_desde)
     if fecha_hasta:
-        query = query.filter(Transaccion.fecha_transaccion <= fecha_hasta)
+        query_asientos = query_asientos.filter(Transaccion.fecha_transaccion <= fecha_hasta)
     
-    # Ordenar por fecha
-    query = query.order_by(Transaccion.fecha_transaccion, Asiento.id_asiento)
+    # Query para asientos de ajuste
+    query_ajustes = db.query(
+        AsientoAjuste.id_asiento_ajuste.label('id'),
+        AsientoAjuste.debe,
+        AsientoAjuste.haber,
+        AsientoAjuste.descripcion_detalle.label('descripcion'),
+        PartidaAjuste.fecha_ajuste.label('fecha'),
+        PartidaAjuste.numero_partida.label('referencia'),
+        literal_column("'AJUSTE'").label('tipo')
+    ).join(
+        PartidaAjuste, AsientoAjuste.id_partida_ajuste == PartidaAjuste.id_partida_ajuste
+    ).filter(
+        AsientoAjuste.id_cuenta == cuenta_id,
+        PartidaAjuste.estado == 'ACTIVO'
+    )
     
-    asientos = query.all()
+    # Aplicar filtros a ajustes
+    if periodo_id:
+        query_ajustes = query_ajustes.filter(PartidaAjuste.id_periodo == periodo_id)
+    if fecha_desde:
+        query_ajustes = query_ajustes.filter(PartidaAjuste.fecha_ajuste >= fecha_desde)
+    if fecha_hasta:
+        query_ajustes = query_ajustes.filter(PartidaAjuste.fecha_ajuste <= fecha_hasta)
+    
+    # Unir ambas queries y ordenar por fecha
+    movimientos = query_asientos.union_all(query_ajustes).order_by('fecha', 'id').all()
     
     # Calcular saldos acumulados
     libro_mayor = []
     saldo_acumulado = Decimal("0.00")
     
-    for asiento in asientos:
+    for movimiento in movimientos:
         # Determinar movimiento según naturaleza de la cuenta
         if cuenta.tipo_cuenta in ['Activo', 'Egreso']:
             # Cuentas de naturaleza deudora
-            movimiento = float(asiento.debe) - float(asiento.haber)
+            cambio = float(movimiento.debe) - float(movimiento.haber)
         else:
             # Cuentas de naturaleza acreedora (Pasivo, Capital, Ingreso)
-            movimiento = float(asiento.haber) - float(asiento.debe)
+            cambio = float(movimiento.haber) - float(movimiento.debe)
         
         saldo_anterior = saldo_acumulado
-        saldo_acumulado += Decimal(str(movimiento))
+        saldo_acumulado += Decimal(str(cambio))
         
         # Determinar tipo de saldo
         tipo_saldo = "DEUDOR" if saldo_acumulado >= 0 else "ACREEDOR"
         if cuenta.tipo_cuenta in ['Pasivo', 'Capital', 'Ingreso']:
             tipo_saldo = "ACREEDOR" if saldo_acumulado >= 0 else "DEUDOR"
         
+        # Convertir fecha si es datetime
+        fecha_mov = movimiento.fecha.date() if hasattr(movimiento.fecha, 'date') else movimiento.fecha
+        
         libro_mayor.append({
-            "id_asiento": asiento.id_asiento,
-            "fecha_movimiento": asiento.fecha_transaccion.date(),
-            "descripcion": asiento.descripcion_asiento or asiento.descripcion_transaccion,
-            "referencia": asiento.numero_referencia or f"ASI-{asiento.id_asiento}",
-            "debe": float(asiento.debe),
-            "haber": float(asiento.haber),
+            "id": movimiento.id,
+            "tipo": movimiento.tipo,
+            "fecha_movimiento": fecha_mov,
+            "descripcion": movimiento.descripcion or "Sin descripción",
+            "referencia": movimiento.referencia or f"{movimiento.tipo}-{movimiento.id}",
+            "debe": float(movimiento.debe),
+            "haber": float(movimiento.haber),
             "saldo_anterior": float(saldo_anterior),
             "saldo_actual": float(saldo_acumulado),
             "tipo_saldo": tipo_saldo,
@@ -111,19 +138,42 @@ def generar_libro_mayor_completo(db: Session, periodo_id: int) -> Dict[str, Any]
             detail="Período no encontrado"
         )
     
-    # Obtener cuentas con movimientos en el período
-    cuentas_con_movimientos = db.query(
-        CatalogoCuentas.id_cuenta,
-        CatalogoCuentas.codigo_cuenta,
-        CatalogoCuentas.nombre_cuenta,
-        CatalogoCuentas.tipo_cuenta
-    ).join(
-        Asiento, CatalogoCuentas.id_cuenta == Asiento.id_cuenta
+    # Obtener IDs de cuentas con movimientos de asientos normales
+    ids_asientos = db.query(
+        Asiento.id_cuenta
     ).join(
         Transaccion, Asiento.id_transaccion == Transaccion.id_transaccion
     ).filter(
         Transaccion.id_periodo == periodo_id
     ).distinct().all()
+    
+    # Obtener IDs de cuentas con movimientos de ajuste
+    ids_ajustes = db.query(
+        AsientoAjuste.id_cuenta
+    ).join(
+        PartidaAjuste, AsientoAjuste.id_partida_ajuste == PartidaAjuste.id_partida_ajuste
+    ).filter(
+        PartidaAjuste.id_periodo == periodo_id,
+        PartidaAjuste.estado == 'ACTIVO'
+    ).distinct().all()
+    
+    # Combinar ambos conjuntos de IDs (usar set para eliminar duplicados)
+    ids_asientos_set = {r[0] for r in ids_asientos}
+    ids_ajustes_set = {r[0] for r in ids_ajustes}
+    ids_lista = list(ids_asientos_set.union(ids_ajustes_set))
+    
+    # Obtener detalles de las cuentas si hay IDs
+    if not ids_lista:
+        cuentas_con_movimientos = []
+    else:
+        cuentas_con_movimientos = db.query(
+            CatalogoCuentas.id_cuenta,
+            CatalogoCuentas.codigo_cuenta,
+            CatalogoCuentas.nombre_cuenta,
+            CatalogoCuentas.tipo_cuenta
+        ).filter(
+            CatalogoCuentas.id_cuenta.in_(ids_lista)
+        ).order_by(CatalogoCuentas.codigo_cuenta).all()
     
     libro_mayor_completo = {
         "periodo_id": periodo_id,

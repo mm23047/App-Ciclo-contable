@@ -11,6 +11,7 @@ from app.models.asiento import Asiento
 from app.models.transaccion import Transaccion
 from app.models.periodo import PeriodoContable
 from app.models.balance_inicial import BalanceInicial
+from app.models.partidas_ajuste import AsientoAjuste, PartidaAjuste
 from app.schemas.balanza_comprobacion import BalanzaComprobacionCreate
 from typing import Dict, List
 from decimal import Decimal
@@ -47,27 +48,56 @@ def generar_balanza_comprobacion(
             detail="La fecha debe estar dentro del rango del período"
         )
     
-    # Obtener todas las cuentas que tienen movimientos en el período o balance inicial
+    # Obtener movimientos de asientos normales
+    movimientos_asientos = db.query(
+        Asiento.id_cuenta,
+        func.sum(Asiento.debe).label('debe'),
+        func.sum(Asiento.haber).label('haber')
+    ).join(
+        Transaccion, Asiento.id_transaccion == Transaccion.id_transaccion
+    ).filter(
+        Transaccion.id_periodo == periodo_id,
+        Transaccion.fecha_transaccion <= fecha_hasta
+    ).group_by(Asiento.id_cuenta).subquery()
+    
+    # Obtener movimientos de asientos de ajuste
+    movimientos_ajustes = db.query(
+        AsientoAjuste.id_cuenta,
+        func.sum(AsientoAjuste.debe).label('debe'),
+        func.sum(AsientoAjuste.haber).label('haber')
+    ).join(
+        PartidaAjuste, AsientoAjuste.id_partida_ajuste == PartidaAjuste.id_partida_ajuste
+    ).filter(
+        PartidaAjuste.id_periodo == periodo_id,
+        PartidaAjuste.fecha_ajuste <= fecha_hasta,
+        PartidaAjuste.estado == 'ACTIVO'
+    ).group_by(AsientoAjuste.id_cuenta).subquery()
+    
+    # Combinar ambos tipos de movimientos con las cuentas
     cuentas_con_movimientos = db.query(
         CatalogoCuentas.id_cuenta,
         CatalogoCuentas.codigo_cuenta,
         CatalogoCuentas.nombre_cuenta,
         CatalogoCuentas.tipo_cuenta,
-        func.coalesce(func.sum(Asiento.debe), 0).label('total_debe'),
-        func.coalesce(func.sum(Asiento.haber), 0).label('total_haber')
+        (
+            func.coalesce(movimientos_asientos.c.debe, 0) + 
+            func.coalesce(movimientos_ajustes.c.debe, 0)
+        ).label('total_debe'),
+        (
+            func.coalesce(movimientos_asientos.c.haber, 0) + 
+            func.coalesce(movimientos_ajustes.c.haber, 0)
+        ).label('total_haber')
     ).outerjoin(
-        Asiento, CatalogoCuentas.id_cuenta == Asiento.id_cuenta
+        movimientos_asientos, CatalogoCuentas.id_cuenta == movimientos_asientos.c.id_cuenta
     ).outerjoin(
-        Transaccion, and_(
-            Asiento.id_transaccion == Transaccion.id_transaccion,
-            Transaccion.id_periodo == periodo_id,
-            Transaccion.fecha_transaccion <= fecha_hasta
-        )
-    ).group_by(
-        CatalogoCuentas.id_cuenta,
-        CatalogoCuentas.codigo_cuenta,
-        CatalogoCuentas.nombre_cuenta,
-        CatalogoCuentas.tipo_cuenta
+        movimientos_ajustes, CatalogoCuentas.id_cuenta == movimientos_ajustes.c.id_cuenta
+    ).filter(
+        (
+            func.coalesce(movimientos_asientos.c.debe, 0) + 
+            func.coalesce(movimientos_ajustes.c.debe, 0) +
+            func.coalesce(movimientos_asientos.c.haber, 0) + 
+            func.coalesce(movimientos_ajustes.c.haber, 0)
+        ) > 0
     ).all()
     
     # Obtener balances iniciales
@@ -205,7 +235,7 @@ def validar_cuadre_periodo(db: Session, periodo_id: int, fecha_hasta: date = Non
     if not fecha_hasta:
         fecha_hasta = periodo.fecha_fin
     
-    # Calcular totales de asientos
+    # Calcular totales de asientos normales
     totales_asientos = db.query(
         func.sum(Asiento.debe).label('total_debe'),
         func.sum(Asiento.haber).label('total_haber')
@@ -216,8 +246,21 @@ def validar_cuadre_periodo(db: Session, periodo_id: int, fecha_hasta: date = Non
         Transaccion.fecha_transaccion <= fecha_hasta
     ).first()
     
-    total_debe = totales_asientos.total_debe or Decimal('0.00')
-    total_haber = totales_asientos.total_haber or Decimal('0.00')
+    # Calcular totales de asientos de ajuste
+    totales_ajustes = db.query(
+        func.sum(AsientoAjuste.debe).label('total_debe'),
+        func.sum(AsientoAjuste.haber).label('total_haber')
+    ).join(
+        PartidaAjuste, AsientoAjuste.id_partida_ajuste == PartidaAjuste.id_partida_ajuste
+    ).filter(
+        PartidaAjuste.id_periodo == periodo_id,
+        PartidaAjuste.fecha_ajuste <= fecha_hasta,
+        PartidaAjuste.estado == 'ACTIVO'
+    ).first()
+    
+    # Sumar totales de ambos tipos
+    total_debe = (totales_asientos.total_debe or Decimal('0.00')) + (totales_ajustes.total_debe or Decimal('0.00'))
+    total_haber = (totales_asientos.total_haber or Decimal('0.00')) + (totales_ajustes.total_haber or Decimal('0.00'))
     diferencia = total_debe - total_haber
     
     # Contar transacciones descuadradas
@@ -268,13 +311,11 @@ def obtener_analisis_cuentas_periodo(
     tipo_cuenta: str = None
 ) -> List[Dict]:
     """
-    Obtener análisis detallado de cuentas por período
+    Obtener análisis detallado de cuentas por período (incluye asientos normales y ajustes)
     """
-    query = db.query(
+    # Obtener movimientos de asientos normales por cuenta
+    movimientos_asientos = db.query(
         CatalogoCuentas.id_cuenta,
-        CatalogoCuentas.codigo_cuenta,
-        CatalogoCuentas.nombre_cuenta,
-        CatalogoCuentas.tipo_cuenta,
         func.count(Asiento.id_asiento).label('cantidad_movimientos'),
         func.coalesce(func.sum(Asiento.debe), 0).label('total_debe'),
         func.coalesce(func.sum(Asiento.haber), 0).label('total_haber')
@@ -285,17 +326,52 @@ def obtener_analisis_cuentas_periodo(
             Asiento.id_transaccion == Transaccion.id_transaccion,
             Transaccion.id_periodo == periodo_id
         )
+    ).group_by(CatalogoCuentas.id_cuenta).subquery()
+    
+    # Obtener movimientos de ajustes por cuenta
+    movimientos_ajustes = db.query(
+        CatalogoCuentas.id_cuenta,
+        func.count(AsientoAjuste.id_asiento_ajuste).label('cantidad_ajustes'),
+        func.coalesce(func.sum(AsientoAjuste.debe), 0).label('total_debe'),
+        func.coalesce(func.sum(AsientoAjuste.haber), 0).label('total_haber')
+    ).outerjoin(
+        AsientoAjuste, CatalogoCuentas.id_cuenta == AsientoAjuste.id_cuenta
+    ).outerjoin(
+        PartidaAjuste, and_(
+            AsientoAjuste.id_partida_ajuste == PartidaAjuste.id_partida_ajuste,
+            PartidaAjuste.id_periodo == periodo_id,
+            PartidaAjuste.estado == 'ACTIVO'
+        )
+    ).group_by(CatalogoCuentas.id_cuenta).subquery()
+    
+    # Combinar ambos tipos de movimientos
+    query = db.query(
+        CatalogoCuentas.id_cuenta,
+        CatalogoCuentas.codigo_cuenta,
+        CatalogoCuentas.nombre_cuenta,
+        CatalogoCuentas.tipo_cuenta,
+        (
+            func.coalesce(movimientos_asientos.c.cantidad_movimientos, 0) +
+            func.coalesce(movimientos_ajustes.c.cantidad_ajustes, 0)
+        ).label('cantidad_movimientos'),
+        (
+            func.coalesce(movimientos_asientos.c.total_debe, 0) +
+            func.coalesce(movimientos_ajustes.c.total_debe, 0)
+        ).label('total_debe'),
+        (
+            func.coalesce(movimientos_asientos.c.total_haber, 0) +
+            func.coalesce(movimientos_ajustes.c.total_haber, 0)
+        ).label('total_haber')
+    ).outerjoin(
+        movimientos_asientos, CatalogoCuentas.id_cuenta == movimientos_asientos.c.id_cuenta
+    ).outerjoin(
+        movimientos_ajustes, CatalogoCuentas.id_cuenta == movimientos_ajustes.c.id_cuenta
     )
     
     if tipo_cuenta:
         query = query.filter(CatalogoCuentas.tipo_cuenta == tipo_cuenta)
     
-    cuentas = query.group_by(
-        CatalogoCuentas.id_cuenta,
-        CatalogoCuentas.codigo_cuenta,
-        CatalogoCuentas.nombre_cuenta,
-        CatalogoCuentas.tipo_cuenta
-    ).order_by(CatalogoCuentas.codigo_cuenta).all()
+    cuentas = query.order_by(CatalogoCuentas.codigo_cuenta).all()
     
     # Obtener balances iniciales
     balances_iniciales = db.query(BalanceInicial).filter(

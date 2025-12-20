@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 def obtener_proximo_numero_partida(backend_url: str) -> str:
     """Obtener el próximo número disponible para partida de ajuste"""
     try:
-        response = requests.get(f"{backend_url}/api/partidas-ajuste")
+        response = requests.get(f"{backend_url}/api/partidas-ajuste", timeout=10)
         if response.status_code == 200:
             partidas = response.json()
             if partidas:
@@ -20,25 +20,25 @@ def obtener_proximo_numero_partida(backend_url: str) -> str:
                 for p in partidas:
                     try:
                         num_str = p.get('numero_partida', '')
-                        # Intentar extraer el número si tiene prefijo
+                        # Intentar extraer el número si tiene prefijo PAJ- o PA-
                         if '-' in num_str:
                             num_str = num_str.split('-')[-1]
                         num = int(num_str)
                         numeros.append(num)
-                    except:
+                    except (ValueError, AttributeError):
                         pass
                 
                 if numeros:
                     proximo = max(numeros) + 1
-                    return f"PA-{proximo:04d}"
+                    return f"PAJ-{proximo:04d}"
                 else:
-                    return "PA-0001"
+                    return "PAJ-0001"
             else:
-                return "PA-0001"
+                return "PAJ-0001"
         else:
-            return "PA-0001"
-    except:
-        return "PA-0001"
+            return "PAJ-0001"
+    except (requests.exceptions.RequestException, ValueError, KeyError):
+        return "PAJ-0001"
 
 def render_page(backend_url: str):
     """Renderizar página de partidas de ajuste"""
@@ -88,11 +88,13 @@ def crear_partida_ajuste(backend_url: str):
             ]
             periodo_seleccionado = st.selectbox("Período contable:", opciones_periodos)
             
-            # Fecha del ajuste
-            fecha_ajuste = st.date_input(
+            # Fecha del ajuste (automática, no editable)
+            fecha_ajuste = datetime.now().date()
+            st.date_input(
                 "Fecha del ajuste:",
-                value=datetime.now().date(),
-                help="Fecha de registro del ajuste"
+                value=fecha_ajuste,
+                disabled=True,
+                help="Fecha automática del sistema (no editable por seguridad contable)"
             )
             
             # Número de partida con sugerencia
@@ -150,8 +152,9 @@ def crear_partida_ajuste(backend_url: str):
             usuario_creacion = st.text_input(
                 "Usuario de creación:",
                 max_chars=50,
-                value=st.session_state.get('usuario_actual', ''),
-                help="Nombre del usuario que registra el ajuste (máximo 50 caracteres)"
+                value=st.session_state.get('username', ''),
+                disabled=True,
+                help="Usuario autenticado que registra el ajuste"
             )
         
         # Botón para guardar datos del encabezado
@@ -182,60 +185,60 @@ def crear_partida_ajuste(backend_url: str):
     
     # Formulario para agregar movimiento
     with st.expander("➕ Agregar Movimiento", expanded=True):
-            col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
-            
-            with col1:
-                # Obtener cuentas que aceptan movimientos
-                try:
-                    response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
-                    cuentas = response_cuentas.json() if response_cuentas.status_code == 200 else []
-                    cuentas_disponibles = [
-                        c for c in cuentas if c['acepta_movimientos']
-                    ]
-                except:
-                    cuentas_disponibles = []
-                
-                opciones_cuentas = [
-                    f"{c['codigo_cuenta']} - {c['nombre_cuenta']}"
-                    for c in cuentas_disponibles
+        col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+        
+        with col1:
+            # Obtener cuentas que aceptan movimientos
+            try:
+                response_cuentas = requests.get(f"{backend_url}/api/catalogo-cuentas")
+                cuentas = response_cuentas.json() if response_cuentas.status_code == 200 else []
+                cuentas_disponibles = [
+                    c for c in cuentas if c['acepta_movimientos']
                 ]
-                
-                if opciones_cuentas:
-                    cuenta_mov = st.selectbox("Cuenta:", opciones_cuentas, key="cuenta_movimiento")
+            except requests.exceptions.RequestException:
+                cuentas_disponibles = []
+            
+            opciones_cuentas = [
+                f"{c['codigo_cuenta']} - {c['nombre_cuenta']}"
+                for c in cuentas_disponibles
+            ]
+            
+            if opciones_cuentas:
+                cuenta_mov = st.selectbox("Cuenta:", opciones_cuentas, key="cuenta_movimiento")
+            else:
+                st.warning("No hay cuentas disponibles")
+                cuenta_mov = None
+        
+        with col2:
+            descripcion_detalle_mov = st.text_input("Descripción del detalle:", key="desc_movimiento")
+        
+        with col3:
+            debe = st.number_input("Debe:", min_value=0.0, step=0.01, key="debe_mov")
+        
+        with col4:
+            haber = st.number_input("Haber:", min_value=0.0, step=0.01, key="haber_mov")
+        
+        if st.button("➕ Agregar Movimiento"):
+            if cuenta_mov and descripcion_detalle_mov and (debe > 0 or haber > 0):
+                if debe > 0 and haber > 0:
+                    st.error("Un movimiento no puede tener valores en debe y haber al mismo tiempo")
                 else:
-                    st.warning("No hay cuentas disponibles")
-                    cuenta_mov = None
-            
-            with col2:
-                descripcion_detalle_mov = st.text_input("Descripción del detalle:", key="desc_movimiento")
-            
-            with col3:
-                debe = st.number_input("Debe:", min_value=0.0, step=0.01, key="debe_mov")
-            
-            with col4:
-                haber = st.number_input("Haber:", min_value=0.0, step=0.01, key="haber_mov")
-            
-            if st.button("➕ Agregar Movimiento"):
-                if cuenta_mov and descripcion_detalle_mov and (debe > 0 or haber > 0):
-                    if debe > 0 and haber > 0:
-                        st.error("Un movimiento no puede tener valores en debe y haber al mismo tiempo")
-                    else:
-                        codigo_cuenta = cuenta_mov.split(" - ")[0]
-                        cuenta_obj = next((c for c in cuentas_disponibles if c['codigo_cuenta'] == codigo_cuenta), None)
-                        
-                        nuevo_movimiento = {
-                            'id_cuenta': cuenta_obj['id_cuenta'],
-                            'codigo_cuenta': codigo_cuenta,
-                            'nombre_cuenta': cuenta_obj['nombre_cuenta'],
-                            'descripcion_detalle': descripcion_detalle_mov,
-                            'debe': debe,
-                            'haber': haber
-                        }
-                        
-                        st.session_state.movimientos_ajuste.append(nuevo_movimiento)
-                        st.rerun()
-                else:
-                    st.error("Complete todos los campos requeridos")
+                    codigo_cuenta = cuenta_mov.split(" - ")[0]
+                    cuenta_obj = next((c for c in cuentas_disponibles if c['codigo_cuenta'] == codigo_cuenta), None)
+                    
+                    nuevo_movimiento = {
+                        'id_cuenta': cuenta_obj['id_cuenta'],
+                        'codigo_cuenta': codigo_cuenta,
+                        'nombre_cuenta': cuenta_obj['nombre_cuenta'],
+                        'descripcion_detalle': descripcion_detalle_mov,
+                        'debe': debe,
+                        'haber': haber
+                    }
+                    
+                    st.session_state.movimientos_ajuste.append(nuevo_movimiento)
+                    st.rerun()
+            else:
+                st.error("Complete todos los campos requeridos")
     
     # Mostrar movimientos agregados
     if st.session_state.movimientos_ajuste:
@@ -282,13 +285,11 @@ def crear_partida_ajuste(backend_url: str):
             st.warning("⚠️ Los movimientos no están balanceados. Debe = Haber")
     
     # Botón para crear la partida (fuera del form, usa datos de session_state)
-    if st.button("💾 Crear Partida de Ajuste", width="stretch", type="primary"):
+    if st.button("💾 Crear Partida de Ajuste", use_container_width=True, type="primary"):
         encabezado = st.session_state.get('ajuste_encabezado', {})
         
         if not encabezado:
             st.error("❌ Primero debes guardar el encabezado del ajuste")
-        elif not encabezado.get('numero_partida'):
-            st.error("❌ El número de partida es requerido")
         elif not encabezado.get('usuario_creacion'):
             st.error("❌ El usuario de creación es requerido")
         elif not st.session_state.movimientos_ajuste:
@@ -301,11 +302,12 @@ def crear_partida_ajuste(backend_url: str):
         elif not encabezado.get('motivo_ajuste'):
             st.error("❌ El motivo del ajuste es requerido")
         else:
+            # El número de partida se genera automáticamente si está vacío
             crear_ajuste_backend(
                 backend_url, 
                 encabezado['periodo_seleccionado'], 
                 periodos,
-                encabezado['numero_partida'],
+                encabezado.get('numero_partida', ''),  # Puede estar vacío
                 encabezado['fecha_ajuste'],
                 encabezado['tipo_ajuste'],
                 encabezado['descripcion'],
@@ -346,7 +348,7 @@ def crear_ajuste_backend(
             "descripcion": descripcion,
             "motivo_ajuste": motivo_ajuste,
             "usuario_creacion": usuario_creacion,
-            "estado": "PENDIENTE",
+            "estado": "ACTIVO",  # Estado por defecto
             "asientos_ajuste": [
                 {
                     "id_cuenta": mov['id_cuenta'],
@@ -410,28 +412,41 @@ def consultar_partidas_ajuste(backend_url: str):
             periodos = []
     
     with col2:
-        # Filtro por tipo de ajuste
-        tipos_ajuste = [
-            "Todos los tipos",
-            "Depreciación de activos fijos",
-            "Provision para cuentas incobrables",
-            "Ajuste de inventarios",
-            "Gastos anticipados",
-            "Ingresos diferidos",
-            "Provision para impuestos",
-            "Provision para prestaciones laborales",
-            "Ajuste de devengos",
-            "Corrección de errores",
-            "Otro"
-        ]
-        tipo_filtro = st.selectbox("Tipo de ajuste:", tipos_ajuste)
+        # Filtro por tipo de ajuste - Mapeo correcto entre display y valores backend
+        tipos_ajuste_display = {
+            "Todos los tipos": None,
+            "DEPRECIACION": "Depreciación de activos fijos",
+            "PROVISION": "Provisión para cuentas incobrables",
+            "AJUSTE_INVENTARIO": "Ajuste de inventarios",
+            "DIFERIDO": "Gastos anticipados / Ingresos diferidos",
+            "DEVENGO": "Ajuste de devengos",
+            "RECLASIFICACION": "Reclasificación de cuentas",
+            "CORRECCION_ERROR": "Corrección de errores",
+            "AJUSTE_CAMBIO": "Ajuste por cambio de método contable",
+            "OTROS": "Otro tipo de ajuste"
+        }
+        
+        tipo_filtro = st.selectbox(
+            "Tipo de ajuste:", 
+            options=list(tipos_ajuste_display.keys()),
+            format_func=lambda x: tipos_ajuste_display[x] if tipos_ajuste_display[x] else x
+        )
     
     with col3:
         # Filtro por fecha
-        fecha_desde = st.date_input("Desde:", value=None, help="Fecha opcional para filtrar")
-        fecha_hasta = st.date_input("Hasta:", value=None, help="Fecha opcional para filtrar")
+        fecha_desde = st.date_input(
+            "Desde:", 
+            value=None, 
+            help="Filtrar partidas desde esta fecha"
+        )
     
-    if st.button("🔍 Buscar Partidas de Ajuste", width="stretch"):
+    fecha_hasta = st.date_input(
+        "Hasta:", 
+        value=None, 
+        help="Filtrar partidas hasta esta fecha"
+    )
+    
+    if st.button("🔍 Buscar Partidas de Ajuste", use_container_width=True):
         obtener_partidas_ajuste(
             backend_url, 
             periodo_filtro,
@@ -449,7 +464,7 @@ def obtener_partidas_ajuste(
     fecha_desde: date = None,
     fecha_hasta: date = None
 ):
-    """Obtener y mostrar partidas de ajuste"""
+    """Obtener y mostrar partidas de ajuste con filtros aplicados"""
     
     try:
         # Determinar el período
@@ -461,35 +476,91 @@ def obtener_partidas_ajuste(
                 return
             periodo_id = periodo_obj['id_periodo']
         else:
-            # Si no hay período específico, usar el primer período disponible o mostrar advertencia
-            if not periodos:
-                st.warning("⚠️ No hay períodos disponibles para consultar")
-                return
-            periodo_id = periodos[0]['id_periodo']  # Usar primer período como default
+            # Obtener todas las partidas
+            periodo_id = None
         
-        # Construir parámetros de consulta
-        params = {}
-        
-        if tipo_filtro != "Todos los tipos":
-            params["tipo_ajuste"] = tipo_filtro
-        
-        # Realizar consulta usando el endpoint correcto
+        # Obtener partidas según el filtro de período
         with st.spinner("Consultando partidas de ajuste..."):
-            response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}", params=params)
+            if periodo_id:
+                response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}")
+            else:
+                # Obtener todas las partidas
+                response = requests.get(f"{backend_url}/api/partidas-ajuste")
         
         if response.status_code == 200:
             partidas = response.json()
             
-            if partidas:
-                mostrar_partidas_ajuste(partidas)
+            # Aplicar filtros en frontend
+            partidas_filtradas = []
+            
+            for partida in partidas:
+                # Filtro por tipo
+                if tipo_filtro != "Todos los tipos" and partida.get('tipo_ajuste') != tipo_filtro:
+                    continue
+                
+                # Filtro por fecha
+                try:
+                    fecha_ajuste_str = partida.get('fecha_ajuste', '')
+                    if fecha_ajuste_str:
+                        # Manejar formato con o sin zona horaria
+                        if 'T' in fecha_ajuste_str:
+                            fecha_ajuste = datetime.fromisoformat(fecha_ajuste_str.replace('Z', '+00:00')).date()
+                        else:
+                            fecha_ajuste = datetime.strptime(fecha_ajuste_str, '%Y-%m-%d').date()
+                        
+                        if fecha_desde and fecha_ajuste < fecha_desde:
+                            continue
+                        
+                        if fecha_hasta and fecha_ajuste > fecha_hasta:
+                            continue
+                except (ValueError, AttributeError):
+                    # Si hay error parseando fecha, incluir la partida
+                    pass
+                
+                partidas_filtradas.append(partida)
+            
+            if partidas_filtradas:
+                # Mostrar resumen de filtros aplicados
+                st.info(f"📊 Se encontraron **{len(partidas_filtradas)}** partidas que coinciden con los filtros")
+                
+                # Mostrar filtros activos
+                filtros_activos = []
+                if periodo_filtro != "Todos los períodos":
+                    filtros_activos.append(f"📅 Período: {periodo_filtro}")
+                if tipo_filtro != "Todos los tipos":
+                    # Buscar el display name del tipo
+                    tipos_display = {
+                        "DEPRECIACION": "Depreciación de activos fijos",
+                        "PROVISION": "Provisión para cuentas incobrables",
+                        "AJUSTE_INVENTARIO": "Ajuste de inventarios",
+                        "DIFERIDO": "Gastos anticipados / Ingresos diferidos",
+                        "DEVENGO": "Ajuste de devengos",
+                        "RECLASIFICACION": "Reclasificación de cuentas",
+                        "CORRECCION_ERROR": "Corrección de errores",
+                        "AJUSTE_CAMBIO": "Ajuste por cambio de método contable",
+                        "OTROS": "Otro tipo de ajuste"
+                    }
+                    tipo_display = tipos_display.get(tipo_filtro, tipo_filtro)
+                    filtros_activos.append(f"🏷️ Tipo: {tipo_display}")
+                if fecha_desde:
+                    filtros_activos.append(f"📆 Desde: {fecha_desde}")
+                if fecha_hasta:
+                    filtros_activos.append(f"📆 Hasta: {fecha_hasta}")
+                
+                if filtros_activos:
+                    st.caption("**Filtros aplicados:** " + " | ".join(filtros_activos))
+                
+                mostrar_partidas_ajuste(partidas_filtradas)
             else:
                 st.info("📭 No se encontraron partidas de ajuste con los filtros aplicados")
                 
         else:
-            st.error(f"Error al consultar partidas: {response.status_code}")
+            st.error(f"❌ Error al consultar partidas: {response.status_code}")
             
     except requests.exceptions.RequestException as e:
-        st.error(f"Error de conexión: {e}")
+        st.error(f"❌ Error de conexión: {e}")
+    except Exception as e:
+        st.error(f"❌ Error inesperado: {e}")
 
 def mostrar_partidas_ajuste(partidas: List[Dict[str, Any]]):
     """Mostrar lista de partidas de ajuste"""
@@ -603,19 +674,26 @@ def reportes_ajustes(backend_url: str):
             periodos = []
     
     with col2:
+        # Rango de fechas más claro
+        st.markdown("**Rango de fechas (opcional):**")
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
         fecha_desde_reporte = st.date_input(
-            "Fecha desde:",
+            "Desde:",
             value=None,
-            help="Fecha inicial del reporte (opcional)"
+            help="Fecha inicial del reporte"
         )
     
-    fecha_hasta_reporte = st.date_input(
-        "Fecha hasta:",
-        value=datetime.now().date(),
-        help="Incluir ajustes hasta esta fecha"
-    )
+    with col4:
+        fecha_hasta_reporte = st.date_input(
+            "Hasta:",
+            value=None,
+            help="Fecha final del reporte"
+        )
     
-    if st.button("📊 Generar Reporte", width="stretch"):
+    if st.button("📊 Generar Reporte", use_container_width=True):
         generar_reporte_especifico(
             backend_url,
             tipo_reporte,
@@ -636,9 +714,7 @@ def generar_reporte_especifico(
     """Generar reporte específico según el tipo seleccionado"""
     
     try:
-        # Por ahora, usar el endpoint de período para obtener datos
-        # El backend no tiene endpoint /reporte implementado
-        
+        # Obtener partidas según el filtro de período
         if periodo_reporte != "Todos los períodos":
             nombre_periodo = periodo_reporte.split(" (")[0]
             periodo_obj = next((p for p in periodos if p['descripcion'] == nombre_periodo), None)
@@ -646,14 +722,11 @@ def generar_reporte_especifico(
                 st.error("❌ Error: Período no encontrado")
                 return
             periodo_id = periodo_obj['id_periodo']
+            
+            response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}")
         else:
-            if not periodos:
-                st.warning("⚠️ No hay períodos disponibles")
-                return
-            periodo_id = periodos[0]['id_periodo']
-        
-        # Usar endpoint de período para obtener partidas
-        response = requests.get(f"{backend_url}/api/partidas-ajuste/periodo/{periodo_id}")
+            # Obtener todas las partidas
+            response = requests.get(f"{backend_url}/api/partidas-ajuste")
         
         if response.status_code == 200:
             partidas = response.json()
@@ -662,21 +735,34 @@ def generar_reporte_especifico(
             if fecha_desde or fecha_hasta:
                 partidas_filtradas = []
                 for p in partidas:
-                    fecha_ajuste = datetime.fromisoformat(p['fecha_ajuste'].replace('Z', '+00:00')).date()
-                    
-                    incluir = True
-                    if fecha_desde and fecha_ajuste < fecha_desde:
-                        incluir = False
-                    if fecha_hasta and fecha_ajuste > fecha_hasta:
-                        incluir = False
-                    
-                    if incluir:
+                    try:
+                        fecha_ajuste_str = p.get('fecha_ajuste', '')
+                        if fecha_ajuste_str:
+                            if 'T' in fecha_ajuste_str:
+                                fecha_ajuste = datetime.fromisoformat(fecha_ajuste_str.replace('Z', '+00:00')).date()
+                            else:
+                                fecha_ajuste = datetime.strptime(fecha_ajuste_str, '%Y-%m-%d').date()
+                            
+                            incluir = True
+                            if fecha_desde and fecha_ajuste < fecha_desde:
+                                incluir = False
+                            if fecha_hasta and fecha_ajuste > fecha_hasta:
+                                incluir = False
+                            
+                            if incluir:
+                                partidas_filtradas.append(p)
+                    except (ValueError, AttributeError):
+                        # Si hay error parseando, incluir la partida
                         partidas_filtradas.append(p)
+                        
                 partidas = partidas_filtradas
             
             if not partidas:
-                st.info("📭 No hay partidas de ajuste en el rango de fechas especificado")
+                st.info("📭 No hay partidas de ajuste en el rango especificado")
                 return
+            
+            # Mostrar resumen antes del reporte
+            st.info(f"📊 Generando reporte con **{len(partidas)}** partidas")
             
             # Generar reporte según el tipo
             if tipo_reporte == "Resumen por período":
@@ -689,10 +775,10 @@ def generar_reporte_especifico(
                 mostrar_detalle_completo(partidas)
                 
         else:
-            st.error(f"Error al generar reporte: {response.status_code}")
+            st.error(f"❌ Error al generar reporte: {response.status_code}")
             
     except Exception as e:
-        st.error(f"Error al generar reporte: {e}")
+        st.error(f"❌ Error al generar reporte: {e}")
 
 def mostrar_resumen_por_periodo(partidas: List[Dict], periodo_nombre: str):
     """Mostrar resumen de ajustes por período"""

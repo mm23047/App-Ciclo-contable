@@ -27,9 +27,14 @@ def generate_numero_partida(db: Session) -> str:
     
     if last_partida and last_partida.numero_partida:
         try:
-            # Extraer número de la partida (formato PAJ-XXXX)
-            last_number = int(last_partida.numero_partida.split('-')[-1])
-            new_number = last_number + 1
+            # Extraer número de la partida (formato PAJ-XXXX o PA-XXXX)
+            parts = last_partida.numero_partida.split('-')
+            if len(parts) >= 2:
+                last_number = int(parts[-1])
+                new_number = last_number + 1
+            else:
+                # Si no tiene el formato esperado, intentar convertir todo
+                new_number = int(last_partida.numero_partida) + 1
         except (ValueError, IndexError):
             new_number = 1
     else:
@@ -46,24 +51,31 @@ def create_partida_ajuste(db: Session, partida_data: PartidaAjusteCreate) -> Par
     if not periodo:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Período contable no encontrado"
+            detail=f"Período contable con ID {partida_data.id_periodo} no encontrado"
         )
     
     # Validar que el período esté abierto
     if periodo.estado != 'ABIERTO':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No se pueden crear ajustes en períodos cerrados"
+            detail=f"No se pueden crear ajustes en un período {periodo.estado}. Solo se permiten períodos ABIERTOS"
+        )
+    
+    # Validar que la fecha de ajuste esté dentro del período
+    if partida_data.fecha_ajuste < periodo.fecha_inicio or partida_data.fecha_ajuste > periodo.fecha_fin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La fecha de ajuste debe estar dentro del período contable ({periodo.fecha_inicio} - {periodo.fecha_fin})"
         )
     
     # Validar balance de los asientos
     if not validate_partida_ajuste_balance([asiento.dict() for asiento in partida_data.asientos_ajuste]):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La partida de ajuste no está balanceada. Total débitos debe igual total créditos"
+            detail="La partida de ajuste no está balanceada. El total de débitos debe ser igual al total de créditos"
         )
     
-    # Validar que todas las cuentas existen
+    # Validar que todas las cuentas existen y están activas
     for asiento_data in partida_data.asientos_ajuste:
         cuenta = db.query(CatalogoCuentas).filter(
             CatalogoCuentas.id_cuenta == asiento_data.id_cuenta
@@ -73,12 +85,17 @@ def create_partida_ajuste(db: Session, partida_data: PartidaAjusteCreate) -> Par
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cuenta con ID {asiento_data.id_cuenta} no encontrada"
             )
+        if cuenta.estado != 'ACTIVA':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No se pueden crear asientos en la cuenta {cuenta.codigo_cuenta} porque está {cuenta.estado}"
+            )
     
-    # Generar número automático si no se proporciona
-    if not partida_data.numero_partida.strip():
+    # Generar número automático si no se proporciona o está vacío
+    if not partida_data.numero_partida or not partida_data.numero_partida.strip():
         numero_partida = generate_numero_partida(db)
     else:
-        numero_partida = partida_data.numero_partida
+        numero_partida = partida_data.numero_partida.strip()
     
     try:
         # Crear la partida de ajuste
@@ -103,16 +120,17 @@ def create_partida_ajuste(db: Session, partida_data: PartidaAjusteCreate) -> Par
         
     except IntegrityError as e:
         db.rollback()
-        if "numero_partida" in str(e):
+        error_msg = str(e)
+        if "numero_partida" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="El número de partida ya existe"
-            )
+                detail=f"El número de partida '{numero_partida}' ya existe. Use un número diferente"
+            ) from e
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Error al crear partida de ajuste"
-            )
+                detail=f"Error de integridad al crear partida de ajuste: {error_msg}"
+            ) from e
 
 def get_partida_ajuste(db: Session, partida_id: int) -> Optional[PartidaAjuste]:
     """Obtener una partida de ajuste específica por ID"""
@@ -120,7 +138,7 @@ def get_partida_ajuste(db: Session, partida_id: int) -> Optional[PartidaAjuste]:
     if not partida:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Partida de ajuste no encontrada"
+            detail=f"Partida de ajuste con ID {partida_id} no encontrada"
         )
     return partida
 
@@ -163,12 +181,12 @@ def update_partida_ajuste(db: Session, partida_id: int, partida_data: PartidaAju
         db.commit()
         db.refresh(partida)
         return partida
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Error al actualizar partida de ajuste"
-        )
+            detail=f"Error de integridad al actualizar partida de ajuste: {str(e)}"
+        ) from e
 
 def anular_partida_ajuste(db: Session, partida_id: int, usuario_anulacion: str) -> PartidaAjuste:
     """Anular una partida de ajuste"""
