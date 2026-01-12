@@ -17,7 +17,7 @@ def render_page(backend_url: str):
     st.markdown("Sistema completo de administración de productos y servicios para facturación")
     
     # Tabs para organizar funcionalidades
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Registrar Producto", "📋 Lista de Productos", "📊 Análisis", "🏷️ Categorías"])
+    tab1, tab2, tab3 = st.tabs(["📝 Registrar Producto", "📋 Lista de Productos", "📊 Análisis"])
     
     with tab1:
         registrar_producto(backend_url)
@@ -27,9 +27,6 @@ def render_page(backend_url: str):
     
     with tab3:
         analisis_productos(backend_url)
-    
-    with tab4:
-        gestion_categorias(backend_url)
 
 def registrar_producto(backend_url: str):
     """Registrar nuevo producto"""
@@ -410,47 +407,8 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
             
             df_tabla.columns = [nombres_columnas.get(col, col) for col in df_tabla.columns]
             
-            # Preparar dataframe editable con stock numérico
-            df_editable = df_display[['id_producto', 'codigo_producto', 'nombre', 'tipo_producto', 
-                                       'categoria', 'precio_venta', 'stock_actual', 'stock_minimo', 
-                                       'stock_maximo', 'estado_producto']].copy() if all(col in df_display.columns for col in ['id_producto', 'stock_actual']) else None
-            
-            # Mostrar tabla editable si tiene columnas de stock
-            if df_editable is not None and 'stock_actual' in df_editable.columns:
-                st.markdown("##### 📝 Editar Stock Directamente en la Tabla")
-                st.caption("Modifique los valores de stock y presione Enter para guardar")
-                
-                edited_df = st.data_editor(
-                    df_editable,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "id_producto": st.column_config.NumberColumn("ID", disabled=True),
-                        "codigo_producto": st.column_config.TextColumn("Código", disabled=True),
-                        "nombre": st.column_config.TextColumn("Nombre", disabled=True),
-                        "tipo_producto": st.column_config.TextColumn("Tipo", disabled=True),
-                        "categoria": st.column_config.TextColumn("Categoría", disabled=True),
-                        "precio_venta": st.column_config.NumberColumn("Precio", disabled=True, format="$%.2f"),
-                        "stock_actual": st.column_config.NumberColumn("Stock Actual", min_value=0, step=1, format="%.0f"),
-                        "stock_minimo": st.column_config.NumberColumn("Stock Mínimo", min_value=0, step=1, format="%.0f"),
-                        "stock_maximo": st.column_config.NumberColumn("Stock Máximo", min_value=0, step=1, format="%.0f"),
-                        "estado_producto": st.column_config.TextColumn("Estado", disabled=True)
-                    },
-                    disabled=["id_producto", "codigo_producto", "nombre", "tipo_producto", "categoria", "precio_venta", "estado_producto"],
-                    key="editor_productos"
-                )
-                
-                # Detectar cambios y actualizar
-                if not edited_df.equals(df_editable):
-                    col1, col2 = st.columns([1, 4])
-                    with col1:
-                        if st.button("💾 Guardar Cambios de Stock", type="primary"):
-                            actualizar_stocks_masivo(backend_url, df_editable, edited_df)
-                    with col2:
-                        st.info("⚠️ Hay cambios sin guardar. Presione 'Guardar Cambios de Stock' para aplicarlos.")
-                
-                st.markdown("---")
-                st.markdown("##### 📋 Vista de Solo Lectura")
+            st.markdown("---")
+            st.markdown("##### ✏️ Editar Producto")
             
             # Mostrar tabla de solo lectura
             event = st.dataframe(
@@ -469,26 +427,22 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
                 st.markdown("---")
                 st.markdown("### 🔧 Acciones sobre Producto Seleccionado")
                 
-                # Botones de acción
-                col1, col2, col3, col4, col5 = st.columns(5)
+                # Inicializar session state
+                if 'producto_accion' not in st.session_state:
+                    st.session_state.producto_accion = None
+                if 'producto_id' not in st.session_state:
+                    st.session_state.producto_id = None
                 
-                ver_detalles = False
-                editar = False
-                actualizar_precio = False
+                # Botones de acción
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
-                    if st.button("👁️ Ver Detalles", use_container_width=True, key="btn_ver_detalles"):
-                        ver_detalles = True
+                    if st.button("✏️ Editar", use_container_width=True, key="btn_editar_producto"):
+                        st.session_state.producto_accion = 'editar'
+                        st.session_state.producto_id = producto_seleccionado['id_producto']
+                        st.rerun()
                 
                 with col2:
-                    if st.button("✏️ Editar", use_container_width=True, key="btn_editar"):
-                        editar = True
-                
-                with col3:
-                    if st.button("💰 Actualizar Precio", use_container_width=True, key="btn_actualizar_precio"):
-                        actualizar_precio = True
-                
-                with col4:
                     estado_actual = producto_seleccionado.get('estado_producto', 'ACTIVO')
                     if estado_actual == 'ACTIVO':
                         nuevo_estado = 'INACTIVO'
@@ -500,25 +454,37 @@ def mostrar_tabla_productos(productos: List[Dict], backend_url: str):
                     if st.button(accion_estado, use_container_width=True, key="btn_cambiar_estado"):
                         cambiar_estado_producto(backend_url, producto_seleccionado['id_producto'], nuevo_estado)
                 
-                with col5:
-                    if st.button("🗑️ Eliminar", use_container_width=True, key="btn_eliminar"):
-                        if st.checkbox("Confirmar eliminación", key=f"confirm_del_prod_{producto_seleccionado['id_producto']}"):
-                            eliminar_producto(backend_url, producto_seleccionado['id_producto'])
+                with col3:
+                    if st.button("🗑️ Eliminar", use_container_width=True, type="secondary", key="btn_eliminar"):
+                        st.session_state.producto_accion = 'eliminar'
+                        st.session_state.producto_id = producto_seleccionado['id_producto']
+                        st.rerun()
                 
                 # Mostrar vistas en contenedor de ancho completo
                 st.markdown("---")
                 
-                if ver_detalles:
-                    with st.container():
-                        mostrar_detalle_producto(producto_seleccionado)
-                
-                if editar:
+                if st.session_state.producto_accion == 'editar' and st.session_state.producto_id == producto_seleccionado['id_producto']:
                     with st.container():
                         editar_producto(backend_url, producto_seleccionado)
+                        if st.button("❌ Cancelar Edición", key="cancelar_editar"):
+                            st.session_state.producto_accion = None
+                            st.session_state.producto_id = None
+                            st.rerun()
                 
-                if actualizar_precio:
+                elif st.session_state.producto_accion == 'eliminar' and st.session_state.producto_id == producto_seleccionado['id_producto']:
                     with st.container():
-                        actualizar_precio_producto(backend_url, producto_seleccionado)
+                        st.warning(f"⚠️ ¿Está seguro que desea eliminar el producto '{producto_seleccionado.get('nombre')}'?")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Confirmar Eliminación", type="primary", key="confirmar_eliminar"):
+                                eliminar_producto(backend_url, producto_seleccionado['id_producto'])
+                                st.session_state.producto_accion = None
+                                st.session_state.producto_id = None
+                        with col2:
+                            if st.button("❌ Cancelar", key="cancelar_eliminar"):
+                                st.session_state.producto_accion = None
+                                st.session_state.producto_id = None
+                                st.rerun()
 
 def mostrar_detalle_producto(producto: Dict[str, Any]):
     """Mostrar detalle completo de un producto"""
@@ -754,13 +720,8 @@ def editar_producto(backend_url: str, producto: Dict[str, Any]):
                     step=1.0
                 )
         
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            submitted = st.form_submit_button("💾 Actualizar Producto", use_container_width=True, type="primary")
-        
-        with col2:
-            cancelar = st.form_submit_button("❌ Cancelar", use_container_width=True)
+        # Botón de actualización
+        submitted = st.form_submit_button("💾 Actualizar Producto", use_container_width=True, type="primary")
         
         if submitted:
             if not nombre or not precio or precio <= 0:
@@ -785,9 +746,6 @@ def editar_producto(backend_url: str, producto: Dict[str, Any]):
                     datos_actualizacion["stock_maximo"] = stock_maximo
                 
                 actualizar_producto_backend(backend_url, producto['id_producto'], datos_actualizacion)
-        
-        if cancelar:
-            st.rerun()
 
 def actualizar_precio_producto(backend_url: str, producto: Dict[str, Any]):
     """Actualización rápida de precio"""
@@ -1011,7 +969,7 @@ def mostrar_analisis_productos(datos: Dict[str, Any]):
     """Mostrar análisis completo de productos"""
     
     # Métricas principales
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric("Total Productos", datos.get('total_productos', 0))
@@ -1020,18 +978,34 @@ def mostrar_analisis_productos(datos: Dict[str, Any]):
         st.metric("Productos Activos", datos.get('productos_activos', 0))
     
     with col3:
-        st.metric("Categorías", datos.get('total_categorias', 0))
-    
-    with col4:
-        st.metric("Valor Promedio", f"${datos.get('precio_promedio', 0):,.2f}")
+        productos_inactivos = datos.get('productos_inactivos', 0)
+        st.metric("Productos Inactivos", productos_inactivos)
     
     # Gráficos de análisis
-    if 'distribucion_tipos' in datos:
-        st.markdown("### 📊 Distribución por Tipo")
+    st.markdown("---")
+    if 'distribucion_tipos' in datos and 'distribucion_estados' in datos:
+        col1, col2 = st.columns(2)
         
+        with col1:
+            st.markdown("### 📊 Distribución por Tipo")
+            tipos = datos['distribucion_tipos']
+            df_tipos = pd.DataFrame(list(tipos.items()), columns=['Tipo', 'Cantidad'])
+            fig_tipos = px.pie(df_tipos, values='Cantidad', names='Tipo', 
+                            title='Productos por Tipo')
+            st.plotly_chart(fig_tipos, use_container_width=True)
+        
+        with col2:
+            st.markdown("### 🟢 Distribución por Estado")
+            estados = datos['distribucion_estados']
+            df_estados = pd.DataFrame(list(estados.items()), columns=['Estado', 'Cantidad'])
+            fig_estados = px.pie(df_estados, values='Cantidad', names='Estado',
+                              title='Productos por Estado',
+                              color_discrete_map={'ACTIVO': '#00cc66', 'INACTIVO': '#ff4444', 'DESCONTINUADO': '#999999'})
+            st.plotly_chart(fig_estados, use_container_width=True)
+    elif 'distribucion_tipos' in datos:
+        st.markdown("### 📊 Distribución por Tipo")
         tipos = datos['distribucion_tipos']
         df_tipos = pd.DataFrame(list(tipos.items()), columns=['Tipo', 'Cantidad'])
-        
         fig_pie = px.pie(df_tipos, values='Cantidad', names='Tipo', 
                         title='Distribución de Productos por Tipo')
         st.plotly_chart(fig_pie, use_container_width=True)
@@ -1052,29 +1026,28 @@ def generar_analisis_basico_productos(productos: List[Dict]):
         st.metric("Total Productos", len(df_productos))
     
     with col2:
-        productos_activos = len(df_productos[df_productos.get('activo', True) == True])
+        if 'estado_producto' in df_productos.columns:
+            productos_activos = len(df_productos[df_productos['estado_producto'] == 'ACTIVO'])
+        else:
+            productos_activos = len(df_productos[df_productos.get('activo', True) == True])
         st.metric("Productos Activos", productos_activos)
     
     with col3:
-        if 'categoria' in df_productos.columns:
-            categorias_unicas = df_productos['categoria'].nunique()
-            st.metric("Categorías", categorias_unicas)
+        if 'estado_producto' in df_productos.columns:
+            productos_inactivos = len(df_productos[df_productos['estado_producto'] == 'INACTIVO'])
         else:
-            st.metric("Categorías", "N/A")
+            productos_inactivos = len(df_productos) - productos_activos
+        st.metric("Productos Inactivos", productos_inactivos)
     
     with col4:
-        # Obtener precio de cualquier columna disponible
-        precio_col = None
-        for col in ['precio_venta', 'precio']:
-            if col in df_productos.columns:
-                precio_col = col
-                break
-        
-        if precio_col:
-            precio_promedio = df_productos[precio_col].mean()
-            st.metric("Precio Promedio", f"${precio_promedio:,.2f}")
-        else:
-            st.metric("Precio Promedio", "N/A")
+        # Calcular productos con stock bajo
+        stock_bajo = 0
+        if 'stock_actual' in df_productos.columns and 'stock_minimo' in df_productos.columns:
+            stock_bajo = len(df_productos[
+                (df_productos['stock_actual'] <= df_productos['stock_minimo']) & 
+                (df_productos['stock_minimo'] > 0)
+            ])
+        st.metric("⚠️ Stock Bajo", stock_bajo, help="Productos con stock menor o igual al stock mínimo")
     
     # Gráfico de distribución por tipo
     if 'tipo_producto' in df_productos.columns:

@@ -72,8 +72,11 @@ def show_libro_diario(backend_url: str):
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🔍 Cargar", type="primary", use_container_width=True):
-            load_libro_diario(backend_url, selected_period_id)
+        cargar_btn = st.button("🔍 Cargar", type="primary", use_container_width=True)
+    
+    # Display results outside the columns
+    if cargar_btn:
+        load_libro_diario(backend_url, selected_period_id)
 
 def load_libro_diario(backend_url: str, periodo_id: Optional[int] = None):
     """Cargar y mostrar los datos del Libro Diario"""
@@ -99,8 +102,10 @@ def load_libro_diario(backend_url: str, periodo_id: Optional[int] = None):
             # Convert to DataFrame
             df = pd.DataFrame(data)
             
-            # Format datetime column
-            df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion']).dt.strftime('%Y-%m-%d %H:%M')
+            # Format datetime column - handle ISO format from backend
+            if 'fecha_transaccion' in df.columns:
+                df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion'], errors='coerce')
+                df['fecha_transaccion'] = df['fecha_transaccion'].dt.strftime('%Y-%m-%d %H:%M')
             
             # Display summary metrics
             total_debe = df['debe'].sum()
@@ -138,10 +143,11 @@ def load_libro_diario(backend_url: str, periodo_id: Optional[int] = None):
             df_display['Debe'] = df_display['Debe'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
             df_display['Haber'] = df_display['Haber'].apply(lambda x: f"${x:,.2f}" if x > 0 else "-")
             
+            # Display in full width with increased height
             st.dataframe(
                 df_display,
                 use_container_width=True,
-                height=400
+                height=600
             )
         
         else:
@@ -454,8 +460,11 @@ def show_balance_report(backend_url: str):
     
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("📊 Generar", type="primary", use_container_width=True) and selected_period_id:
-            load_balance_report(backend_url, selected_period_id)
+        generar_btn = st.button("📊 Generar", type="primary", use_container_width=True)
+    
+    # Display results outside the columns
+    if generar_btn and selected_period_id:
+        load_balance_report(backend_url, selected_period_id)
 
 def load_balance_report(backend_url: str, periodo_id: int):
     """Cargar y mostrar reporte de balance"""
@@ -486,10 +495,21 @@ def load_balance_report(backend_url: str, periodo_id: int):
                 st.markdown(f"### {tipo_cuenta}")
                 tipo_df = df[df['tipo_cuenta'] == tipo_cuenta]
                 
-                st.dataframe(
-                    tipo_df[['codigo_cuenta', 'nombre_cuenta', 'total_debe', 'total_haber', 'saldo']],
-                    width="stretch"
-                )
+                # Filter out rows where all numeric columns are zero or empty
+                tipo_df = tipo_df[
+                    (tipo_df['total_debe'] != 0) | 
+                    (tipo_df['total_haber'] != 0) | 
+                    (tipo_df['saldo'] != 0)
+                ]
+                
+                if not tipo_df.empty:
+                    st.dataframe(
+                        tipo_df[['codigo_cuenta', 'nombre_cuenta', 'total_debe', 'total_haber', 'saldo']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.info(f"No hay movimientos en {tipo_cuenta} para este período")
             
             # Display totals
             st.markdown("---")

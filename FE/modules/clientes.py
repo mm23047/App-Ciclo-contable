@@ -16,7 +16,7 @@ def render_page(backend_url: str):
     st.markdown("Sistema completo de administración de clientes para el módulo de facturación")
     
     # Tabs para organizar funcionalidades
-    tab1, tab2, tab3, tab4 = st.tabs(["📝 Registrar Cliente", "📋 Lista de Clientes", "📊 Análisis", "🔍 Búsqueda Avanzada"])
+    tab1, tab2, tab3 = st.tabs(["📝 Registrar Cliente", "📋 Lista de Clientes", "📊 Análisis"])
     
     with tab1:
         registrar_cliente(backend_url)
@@ -26,9 +26,6 @@ def render_page(backend_url: str):
     
     with tab3:
         analisis_clientes(backend_url)
-    
-    with tab4:
-        busqueda_avanzada_clientes(backend_url)
 
 def registrar_cliente(backend_url: str):
     """Registrar nuevo cliente"""
@@ -75,25 +72,51 @@ def registrar_cliente(backend_url: str):
                 help="Correo electrónico principal"
             )
             
-            telefono = st.text_input(
+            telefono_input = st.text_input(
                 "Teléfono:",
-                help="Número de teléfono principal"
+                help="Número de teléfono - ingrese 8 dígitos (se formateará automáticamente)",
+                placeholder="Ej: 22501234",
+                max_chars=9,
+                key="telefono_registro"
             )
             
-            celular = st.text_input(
+            # Formatear teléfono automáticamente con guión
+            telefono = telefono_input
+            if telefono_input:
+                # Eliminar caracteres no numéricos
+                telefono_numeros = ''.join(filter(str.isdigit, telefono_input))
+                # Si tiene 8 dígitos, formatear con guión
+                if len(telefono_numeros) == 8:
+                    telefono = f"{telefono_numeros[:4]}-{telefono_numeros[4:]}"
+                elif len(telefono_numeros) > 0 and len(telefono_numeros) < 8:
+                    # Mostrar advertencia si no tiene 8 dígitos
+                    st.caption(f"⚠️ Faltan {8 - len(telefono_numeros)} dígito(s)")
+            
+            celular_input = st.text_input(
                 "Celular:",
-                help="Número de celular"
+                help="Número de celular - ingrese 8 dígitos (se formateará automáticamente)",
+                placeholder="Ej: 71234567",
+                max_chars=9,
+                key="celular_registro"
             )
+            
+            # Formatear celular automáticamente con guión
+            celular = celular_input
+            if celular_input:
+                # Eliminar caracteres no numéricos
+                celular_numeros = ''.join(filter(str.isdigit, celular_input))
+                # Si tiene 8 dígitos, formatear con guión
+                if len(celular_numeros) == 8:
+                    celular = f"{celular_numeros[:4]}-{celular_numeros[4:]}"
+                elif len(celular_numeros) > 0 and len(celular_numeros) < 8:
+                    # Mostrar advertencia si no tiene 8 dígitos
+                    st.caption(f"⚠️ Faltan {8 - len(celular_numeros)} dígito(s)")
             
             direccion = st.text_area(
-                "Dirección:",
+                "Dirección*:",
                 height=100,
-                help="Dirección completa del cliente"
-            )
-            
-            ciudad = st.text_input(
-                "Ciudad:",
-                help="Ciudad de residencia o sede principal"
+                help="Dirección completa del cliente (obligatorio)",
+                placeholder="Ingrese la dirección completa"
             )
         
         col1, col2 = st.columns(2)
@@ -194,8 +217,32 @@ def registrar_cliente(backend_url: str):
         )
         
         if submitted:
+            # Validaciones
+            errores = []
+            
             if not codigo_cliente or not nombre or not nit:
-                st.error("❌ Complete los campos obligatorios marcados con *")
+                errores.append("Complete los campos obligatorios: Código Cliente, Nombre y NIT")
+            
+            if not direccion or direccion.strip() == "":
+                errores.append("La dirección es obligatoria")
+            
+            # Validar celular si fue ingresado
+            if celular and celular.strip():
+                celular_limpio = celular.strip().replace("-", "").replace(" ", "")
+                if not celular_limpio.isdigit():
+                    errores.append("El celular solo debe contener números")
+                elif len(celular_limpio) != 8:
+                    errores.append("El celular debe tener exactamente 8 dígitos")
+            
+            # Validar teléfono si fue ingresado
+            if telefono and telefono.strip():
+                telefono_limpio = telefono.strip().replace("-", "").replace(" ", "")
+                if not telefono_limpio.isdigit():
+                    errores.append("El teléfono solo debe contener números (puede incluir guión)")
+            
+            if errores:
+                for error in errores:
+                    st.error(f"❌ {error}")
             else:
                 crear_cliente_completo(
                     backend_url,
@@ -209,7 +256,6 @@ def registrar_cliente(backend_url: str):
                         "telefono": telefono,
                         "celular": celular,
                         "direccion": direccion,
-                        "ciudad": ciudad,
                         "categoria_cliente": categoria_cliente,
                         "canal_ventas": canal_ventas,
                         "zona_comercial": zona_comercial,
@@ -417,7 +463,7 @@ def mostrar_tabla_clientes(clientes: List[Dict], backend_url: str):
                 if 'accion_cliente' not in st.session_state:
                     st.session_state.accion_cliente = None
                 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3 = st.columns(3)
                 
                 with col1:
                     if st.button("👁️ Ver Detalles", use_container_width=True, key=f"ver_det_{cliente_seleccionado['id_cliente']}"):
@@ -434,27 +480,10 @@ def mostrar_tabla_clientes(clientes: List[Dict], backend_url: str):
                     if st.button(accion_estado, use_container_width=True, key=f"estado_{cliente_seleccionado['id_cliente']}"):
                         cambiar_estado_cliente(backend_url, cliente_seleccionado['id_cliente'], not estado_actual)
                 
-                with col4:
-                    if st.button("🗑️ Eliminar", use_container_width=True, type="secondary", key=f"eliminar_{cliente_seleccionado['id_cliente']}"):
-                        st.session_state.accion_cliente = 'eliminar'
-                
                 # Renderizar la vista seleccionada en contenedor de ancho completo
                 if st.session_state.accion_cliente == 'ver_detalles':
                     with st.container():
                         mostrar_detalle_cliente(cliente_seleccionado)
-                
-                elif st.session_state.accion_cliente == 'eliminar':
-                    with st.container():
-                        st.warning(f"⚠️ ¿Está seguro que desea eliminar el cliente '{cliente_seleccionado.get('nombre')}'?")
-                        col1, col2, col3 = st.columns([1, 1, 2])
-                        with col1:
-                            if st.button("✅ Confirmar", use_container_width=True, type="primary", key=f"confirm_del_{cliente_seleccionado['id_cliente']}"):
-                                eliminar_cliente(backend_url, cliente_seleccionado['id_cliente'])
-                                st.session_state.accion_cliente = None
-                        with col2:
-                            if st.button("❌ Cancelar", use_container_width=True, key=f"cancel_del_{cliente_seleccionado['id_cliente']}"):
-                                st.session_state.accion_cliente = None
-                                st.rerun()
 
 def mostrar_detalle_cliente(cliente: Dict[str, Any]):
     """Mostrar detalle completo de un cliente"""
@@ -544,9 +573,46 @@ def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
         col1, col2 = st.columns(2, gap="large")
         
         with col1:
-            nombre = st.text_input("Nombre/Razón Social:", value=cliente.get('nombre', ''))
+            nombre = st.text_input("Nombre/Razón Social*:", value=cliente.get('nombre', ''))
             email = st.text_input("Email:", value=cliente.get('email', '') or '')
-            telefono = st.text_input("Teléfono:", value=cliente.get('telefono', '') or '')
+            
+            telefono_value = cliente.get('telefono', '') or ''
+            telefono_input = st.text_input(
+                "Teléfono:", 
+                value=telefono_value,
+                placeholder="Ej: 22501234",
+                max_chars=9,
+                help="Ingrese 8 dígitos (se formateará automáticamente)",
+                key=f"telefono_edit_{cliente['id_cliente']}"
+            )
+            
+            # Formatear teléfono automáticamente
+            telefono = telefono_input
+            if telefono_input:
+                telefono_numeros = ''.join(filter(str.isdigit, telefono_input))
+                if len(telefono_numeros) == 8:
+                    telefono = f"{telefono_numeros[:4]}-{telefono_numeros[4:]}"
+                elif len(telefono_numeros) > 0 and len(telefono_numeros) < 8:
+                    st.caption(f"⚠️ Faltan {8 - len(telefono_numeros)} dígito(s)")
+            
+            celular_value = cliente.get('celular', '') or ''
+            celular_input = st.text_input(
+                "Celular:", 
+                value=celular_value,
+                placeholder="Ej: 71234567",
+                max_chars=9,
+                help="Ingrese 8 dígitos (se formateará automáticamente)",
+                key=f"celular_edit_{cliente['id_cliente']}"
+            )
+            
+            # Formatear celular automáticamente
+            celular = celular_input
+            if celular_input:
+                celular_numeros = ''.join(filter(str.isdigit, celular_input))
+                if len(celular_numeros) == 8:
+                    celular = f"{celular_numeros[:4]}-{celular_numeros[4:]}"
+                elif len(celular_numeros) > 0 and len(celular_numeros) < 8:
+                    st.caption(f"⚠️ Faltan {8 - len(celular_numeros)} dígito(s)")
             
             # Manejar categoría de forma segura
             categorias_validas = ["VIP", "Corporativo", "PYME", "Nuevo", "Mayorista", "Minorista"]
@@ -565,7 +631,11 @@ def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
             )
         
         with col2:
-            direccion = st.text_area("Dirección:", value=cliente.get('direccion', ''))
+            direccion = st.text_area(
+                "Dirección*:", 
+                value=cliente.get('direccion', ''),
+                help="Campo obligatorio"
+            )
             limite_credito = st.number_input("Límite de Crédito:", value=float(cliente.get('limite_credito', 0.0)))
             dias_credito = st.number_input("Días de Crédito:", value=int(cliente.get('dias_credito', 30)))
             activo = st.checkbox("Activo", value=cliente.get('activo', True))
@@ -586,19 +656,47 @@ def editar_cliente(backend_url: str, cliente: Dict[str, Any]):
             st.rerun()
         
         if submitted:
-            datos_actualizacion = {
-                "nombre": nombre,
-                "email": email if email else None,
-                "telefono": telefono if telefono else None,
-                "direccion": direccion if direccion else None,
-                "categoria_cliente": categoria,
-                "limite_credito": limite_credito,
-                "dias_credito": dias_credito,
-                "activo": activo,
-                "observaciones": observaciones if observaciones else None
-            }
+            # Validaciones
+            errores = []
             
-            actualizar_cliente_backend(backend_url, cliente['id_cliente'], datos_actualizacion)
+            if not nombre or nombre.strip() == "":
+                errores.append("El nombre es obligatorio")
+            
+            if not direccion or direccion.strip() == "":
+                errores.append("La dirección es obligatoria")
+            
+            # Validar celular si fue ingresado
+            if celular and celular.strip():
+                celular_limpio = celular.strip().replace("-", "").replace(" ", "")
+                if not celular_limpio.isdigit():
+                    errores.append("El celular solo debe contener números")
+                elif len(celular_limpio) != 8:
+                    errores.append("El celular debe tener exactamente 8 dígitos")
+            
+            # Validar teléfono si fue ingresado
+            if telefono and telefono.strip():
+                telefono_limpio = telefono.strip().replace("-", "").replace(" ", "")
+                if not telefono_limpio.isdigit():
+                    errores.append("El teléfono solo debe contener números")
+            
+            if errores:
+                for error in errores:
+                    st.error(f"❌ {error}")
+            else:
+                datos_actualizacion = {
+                    "nombre": nombre,
+                    "email": email if email else None,
+                    "telefono": telefono if telefono else None,
+                    "celular": celular if celular else None,
+                    "direccion": direccion,
+                    "categoria_cliente": categoria,
+                    "limite_credito": limite_credito,
+                    "dias_credito": dias_credito,
+                    "activo": activo,
+                    "observaciones": observaciones if observaciones else None
+                }
+                
+                actualizar_cliente_backend(backend_url, cliente['id_cliente'], datos_actualizacion)
 
 def actualizar_cliente_backend(backend_url: str, id_cliente: int, datos: Dict[str, Any]):
     """Actualizar cliente en el backend"""
@@ -625,9 +723,10 @@ def cambiar_estado_cliente(backend_url: str, id_cliente: int, nuevo_estado: bool
     
     try:
         with st.spinner("Cambiando estado..."):
+            # El endpoint espera el parámetro 'activo' como query parameter
             response = requests.patch(
                 f"{backend_url}/api/clientes/{id_cliente}/estado",
-                json={"activo": nuevo_estado}
+                params={"activo": nuevo_estado}
             )
         
         if response.status_code == 200:
@@ -635,10 +734,15 @@ def cambiar_estado_cliente(backend_url: str, id_cliente: int, nuevo_estado: bool
             st.success(f"✅ Cliente {estado_texto} exitosamente")
             st.rerun()
         else:
-            st.error(f"Error al cambiar estado: {response.status_code}")
+            error_detail = "Error desconocido"
+            try:
+                error_detail = response.json().get('detail', error_detail)
+            except:
+                pass
+            st.error(f"❌ Error al cambiar estado: {error_detail}")
             
     except Exception as e:
-        st.error(f"Error al cambiar estado: {e}")
+        st.error(f"❌ Error al cambiar estado: {e}")
 
 def eliminar_cliente(backend_url: str, id_cliente: int):
     """Eliminar cliente"""
@@ -691,26 +795,44 @@ def mostrar_analisis_clientes(datos: Dict[str, Any]):
         st.metric("Total Clientes", datos.get('total_clientes', 0))
     
     with col2:
-        st.metric("Nuevos Este Mes", datos.get('nuevos_mes', 0))
-    
-    with col3:
         st.metric("Clientes Activos", datos.get('clientes_activos', 0))
     
+    with col3:
+        st.metric("Clientes Inactivos", datos.get('clientes_inactivos', 0))
+    
     with col4:
-        st.metric("Tasa Retención", f"{datos.get('tasa_retencion', 0):.1f}%")
+        st.metric("Nuevos Este Mes", datos.get('nuevos_mes', 0))
     
     # Gráficos de análisis
-    if 'distribucion_categorias' in datos:
-        st.markdown("### 📊 Distribución por Categorías")
-        
-        categorias = datos['distribucion_categorias']
-        df_cat = pd.DataFrame(list(categorias.items()), columns=['Categoría', 'Cantidad'])
-        
-        fig_pie = px.pie(df_cat, values='Cantidad', names='Categoría', 
-                        title='Distribución de Clientes por Categoría')
-        st.plotly_chart(fig_pie, use_container_width=True)
+    st.markdown("---")
     
-    # Más análisis específicos pueden agregarse aquí
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if 'distribucion_categorias' in datos and datos['distribucion_categorias']:
+            st.markdown("### 📊 Distribución por Categorías")
+            
+            categorias = datos['distribucion_categorias']
+            df_cat = pd.DataFrame(list(categorias.items()), columns=['Categoría', 'Cantidad'])
+            
+            fig_pie = px.pie(df_cat, values='Cantidad', names='Categoría', 
+                            title='Clientes por Categoría')
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("Sin datos de categorías")
+    
+    with col2:
+        if 'distribucion_tipos' in datos and datos['distribucion_tipos']:
+            st.markdown("### 🏢 Distribución por Tipo")
+            
+            tipos = datos['distribucion_tipos']
+            df_tipos = pd.DataFrame(list(tipos.items()), columns=['Tipo', 'Cantidad'])
+            
+            fig_bar = px.bar(df_tipos, x='Tipo', y='Cantidad',
+                            title='Clientes por Tipo')
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("Sin datos de tipos")
 
 def generar_analisis_basico(clientes: List[Dict]):
     """Generar análisis básico con datos de clientes"""
@@ -764,139 +886,3 @@ def generar_analisis_basico(clientes: List[Dict]):
                         title='Cantidad de Clientes por Categoría')
         st.plotly_chart(fig_cat, use_container_width=True)
 
-def busqueda_avanzada_clientes(backend_url: str):
-    """Búsqueda avanzada de clientes con múltiples filtros"""
-    
-    st.subheader("🔍 Búsqueda Avanzada de Clientes")
-    
-    with st.form("form_busqueda_avanzada"):
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("**📋 Información Básica**")
-            
-            codigo_buscar = st.text_input("Código Cliente:")
-            nombre_buscar = st.text_input("Nombre/Razón Social:")
-            nit_buscar = st.text_input("NIT/CC:")
-            tipo_buscar = st.selectbox("Tipo:", ["Todos", "Empresa", "Persona Natural"])
-        
-        with col2:
-            st.markdown("**🏷️ Clasificación**")
-            
-            categoria_buscar = st.selectbox(
-                "Categoría:",
-                ["Todas", "VIP", "Corporativo", "PYME", "Nuevo", "Mayorista", "Minorista"]
-            )
-            
-            canal_buscar = st.selectbox(
-                "Canal de Ventas:",
-                ["Todos", "Directo", "Distribuidor", "Online", "Telefónico", "Referido"]
-            )
-            
-            zona_buscar = st.text_input("Zona Comercial:")
-            ciudad_buscar = st.text_input("Ciudad:")
-        
-        with col3:
-            st.markdown("**💰 Criterios Financieros**")
-            
-            limite_min = st.number_input("Límite Crédito Mín.:", min_value=0.0, value=0.0)
-            limite_max = st.number_input("Límite Crédito Máx.:", min_value=0.0, value=0.0)
-            
-            dias_credito_min = st.number_input("Días Crédito Mín.:", min_value=0, value=0)
-            dias_credito_max = st.number_input("Días Crédito Máx.:", min_value=0, value=0)
-            
-            estado_buscar = st.selectbox("Estado:", ["Todos", "Activos", "Inactivos"])
-        
-        if st.form_submit_button("🔍 Buscar Clientes", use_container_width=True):
-            ejecutar_busqueda_avanzada(
-                backend_url,
-                {
-                    "codigo": codigo_buscar,
-                    "nombre": nombre_buscar,
-                    "nit": nit_buscar,
-                    "tipo": tipo_buscar if tipo_buscar != "Todos" else None,
-                    "categoria": categoria_buscar if categoria_buscar != "Todas" else None,
-                    "canal": canal_buscar if canal_buscar != "Todos" else None,
-                    "zona": zona_buscar,
-                    "ciudad": ciudad_buscar,
-                    "limite_min": limite_min if limite_min > 0 else None,
-                    "limite_max": limite_max if limite_max > 0 else None,
-                    "dias_min": dias_credito_min if dias_credito_min > 0 else None,
-                    "dias_max": dias_credito_max if dias_credito_max > 0 else None,
-                    "estado": estado_buscar if estado_buscar != "Todos" else None
-                }
-            )
-
-def ejecutar_busqueda_avanzada(backend_url: str, criterios: Dict[str, Any]):
-    """Ejecutar búsqueda avanzada con criterios específicos"""
-    
-    try:
-        # Filtrar criterios no vacíos
-        params = {k: v for k, v in criterios.items() if v is not None and v != ""}
-        
-        with st.spinner("Ejecutando búsqueda avanzada..."):
-            response = requests.get(f"{backend_url}/api/clientes/busqueda-avanzada", params=params)
-        
-        if response.status_code == 200:
-            clientes_encontrados = response.json()
-            
-            if clientes_encontrados:
-                st.success(f"✅ Se encontraron {len(clientes_encontrados)} clientes")
-                mostrar_tabla_clientes(clientes_encontrados, backend_url)
-            else:
-                st.info("📭 No se encontraron clientes con los criterios especificados")
-        else:
-            # Fallback: usar búsqueda simple
-            response_simple = requests.get(f"{backend_url}/api/clientes")
-            if response_simple.status_code == 200:
-                todos_clientes = response_simple.json()
-                clientes_filtrados = filtrar_clientes_localmente(todos_clientes, criterios)
-                
-                if clientes_filtrados:
-                    st.success(f"✅ Se encontraron {len(clientes_filtrados)} clientes")
-                    mostrar_tabla_clientes(clientes_filtrados, backend_url)
-                else:
-                    st.info("📭 No se encontraron clientes con los criterios especificados")
-            else:
-                st.error("Error al ejecutar búsqueda")
-                
-    except Exception as e:
-        st.error(f"Error en búsqueda avanzada: {e}")
-
-def filtrar_clientes_localmente(clientes: List[Dict], criterios: Dict[str, Any]):
-    """Filtrar clientes localmente cuando no hay endpoint específico"""
-    
-    clientes_filtrados = clientes.copy()
-    
-    for criterio, valor in criterios.items():
-        if valor is None:
-            continue
-        
-        if criterio == "codigo" and valor:
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if valor.lower() in str(c.get('codigo_cliente', '')).lower()]
-        
-        elif criterio == "nombre" and valor:
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if valor.lower() in str(c.get('nombre', '')).lower()]
-        
-        elif criterio == "nit" and valor:
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if valor in str(c.get('nit', ''))]
-        
-        elif criterio == "tipo" and valor:
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if c.get('tipo_cliente') == valor]
-        
-        elif criterio == "categoria" and valor:
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if c.get('categoria_cliente') == valor]
-        
-        elif criterio == "estado" and valor:
-            estado_bool = valor == "Activos"
-            clientes_filtrados = [c for c in clientes_filtrados 
-                                if c.get('activo', True) == estado_bool]
-        
-        # Agregar más filtros según necesidad
-    
-    return clientes_filtrados
