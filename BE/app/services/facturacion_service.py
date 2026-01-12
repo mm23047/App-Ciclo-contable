@@ -3,16 +3,16 @@ Capa de servicios para Facturación Digital.
 Maneja la lógica de negocio para facturación e integración contable automática.
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, desc
+from sqlalchemy import func, desc
 from fastapi import HTTPException, status
 from app.models.facturacion import Cliente, Producto, Factura, DetalleFactura, ConfiguracionFacturacion
 from app.models.periodo import PeriodoContable
 from app.schemas.facturacion import (
-    ClienteCreate, ClienteUpdate, ProductoCreate, ProductoUpdate,
-    FacturaCreate, FacturaUpdate, DetalleFacturaCreate,
+    ClienteCreate, ProductoCreate,
+    FacturaCreate, DetalleFacturaCreate,
     ConfiguracionFacturacionCreate, ConfiguracionFacturacionUpdate
 )
-from typing import Dict, List, Optional
+from typing import Dict, List
 from decimal import Decimal
 from datetime import date, datetime
 
@@ -104,6 +104,18 @@ def crear_factura_completa(
     # Cargar configuración fiscal
     config = obtener_configuracion_facturacion(db)
     
+    # Validar período contable
+    periodo = db.query(PeriodoContable).filter(
+        PeriodoContable.fecha_inicio <= factura_data.fecha_emision,
+        PeriodoContable.fecha_fin >= factura_data.fecha_emision
+    ).first()
+    
+    if periodo and periodo.estado == 'CERRADO':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No se puede crear factura en período cerrado ({periodo.tipo_periodo})"
+        )
+    
     # Validar que el cliente exista
     cliente = db.query(Cliente).filter(
         Cliente.id_cliente == factura_data.id_cliente,
@@ -115,21 +127,25 @@ def crear_factura_completa(
             detail="Cliente no encontrado o inactivo"
         )
     
-    # Validar que todos los productos existan
-    productos_ids = [detalle.id_producto for detalle in detalles]
-    productos_ids_unicos = list(set(productos_ids))  # Obtener IDs únicos
-    productos = db.query(Producto).filter(
-        Producto.id_producto.in_(productos_ids_unicos),
-        Producto.estado_producto == 'ACTIVO'
-    ).all()
+    # Validar que todos los productos con id_producto existan y filtrar None
+    productos_ids = [detalle.id_producto for detalle in detalles if detalle.id_producto is not None]
     
-    if len(productos) != len(productos_ids_unicos):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uno o más productos no encontrados o inactivos"
-        )
-    
-    productos_map = {p.id_producto: p for p in productos}
+    if productos_ids:  # Solo validar si hay productos con ID
+        productos_ids_unicos = list(set(productos_ids))  # Obtener IDs únicos
+        productos = db.query(Producto).filter(
+            Producto.id_producto.in_(productos_ids_unicos),
+            Producto.estado_producto == 'ACTIVO'
+        ).all()
+        
+        if len(productos) != len(productos_ids_unicos):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uno o más productos no encontrados o inactivos"
+            )
+        
+        productos_map = {p.id_producto: p for p in productos}
+    else:
+        productos_map = {}
     
     try:
         # Generar número de factura usando configuración
@@ -146,22 +162,41 @@ def crear_factura_completa(
         # Validar y calcular detalles
         detalles_calculados = []
         for detalle in detalles:
-            producto = productos_map[detalle.id_producto]
+            # Validar que tenga producto o descripción personalizada
+            if not detalle.id_producto and not detalle.descripcion_personalizada:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cada línea debe tener un producto o una descripción personalizada"
+                )
             
-            precio_unitario = detalle.precio_unitario or producto.precio_venta
+            # Obtener datos del producto si existe
+            if detalle.id_producto and detalle.id_producto in productos_map:
+                producto = productos_map[detalle.id_producto]
+                precio_unitario = detalle.precio_unitario if detalle.precio_unitario else producto.precio_venta
+                aplica_iva = producto.aplica_iva
+            else:
+                # Producto personalizado, usar datos del detalle
+                if not detalle.precio_unitario:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Precio unitario es requerido para descripciones personalizadas"
+                    )
+                precio_unitario = detalle.precio_unitario
+                aplica_iva = True  # Por defecto aplica IVA a productos personalizados
+            
             cantidad = detalle.cantidad
             
             if cantidad <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cantidad debe ser mayor a 0 para producto {producto.nombre}"
+                    detail="Cantidad debe ser mayor a 0"
                 )
             
             subtotal_linea = precio_unitario * Decimal(str(cantidad))
             
             # Calcular IVA si aplica usando configuración fiscal
             iva_linea = Decimal('0.00')
-            if producto.aplica_iva:
+            if aplica_iva:
                 # Usar porcentaje de IVA de la configuración
                 iva_porcentaje = Decimal(str(config.iva_porcentaje)) / Decimal('100')
                 iva_linea = subtotal_linea * iva_porcentaje
@@ -173,7 +208,8 @@ def crear_factura_completa(
                 'precio_unitario': precio_unitario,
                 'subtotal_linea': subtotal_linea,
                 'iva_linea': iva_linea,
-                'total_linea': total_linea
+                'total_linea': total_linea,
+                'aplica_iva': aplica_iva
             })
             
             subtotal += subtotal_linea
@@ -232,20 +268,21 @@ def crear_factura_completa(
             )
             db.add(db_detalle)
             
-            # Actualizar stock del producto si maneja inventario
-            producto = productos_map[detalle_calc['detalle_data'].id_producto]
-            if producto.maneja_inventario and producto.tipo_producto == 'PRODUCTO':
-                cantidad_vendida = Decimal(str(detalle_calc['detalle_data'].cantidad))
-                nuevo_stock = Decimal(str(producto.stock_actual)) - cantidad_vendida
-                
-                # Validar que no quede stock negativo
-                if nuevo_stock < 0:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Stock insuficiente para producto '{producto.nombre}'. Stock disponible: {producto.stock_actual}, cantidad solicitada: {cantidad_vendida}"
-                    )
-                
-                producto.stock_actual = float(nuevo_stock)
+            # Actualizar stock del producto si maneja inventario y tiene id_producto
+            if detalle_calc['detalle_data'].id_producto and detalle_calc['detalle_data'].id_producto in productos_map:
+                producto = productos_map[detalle_calc['detalle_data'].id_producto]
+                if producto.maneja_inventario:
+                    cantidad_vendida = Decimal(str(detalle_calc['detalle_data'].cantidad))
+                    nuevo_stock = Decimal(str(producto.stock_actual)) - cantidad_vendida
+                    
+                    # Validar que no quede stock negativo
+                    if nuevo_stock < 0:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Stock insuficiente para producto '{producto.nombre}'. Stock disponible: {producto.stock_actual}, cantidad solicitada: {cantidad_vendida}"
+                        )
+                    
+                    producto.stock_actual = float(nuevo_stock)
         
         # Incrementar número actual de factura en la configuración
         if not factura_data.numero_factura:  # Solo si se generó automáticamente
@@ -284,6 +321,7 @@ def buscar_facturas(
     fecha_desde: date = None,
     fecha_hasta: date = None,
     numero_factura: str = None,
+    codigo_cliente: str = None,
     limit: int = 100,
     offset: int = 0
 ) -> List[Factura]:
@@ -292,7 +330,15 @@ def buscar_facturas(
     query = db.query(Factura)
     
     if estado and estado != "Todas":
-        query = query.filter(Factura.estado_factura == estado.upper())
+        # Mapear estados del frontend al backend
+        estado_map = {
+            "Pendiente": "EMITIDA",
+            "Pagada": "PAGADA",
+            "Vencida": "VENCIDA",
+            "Anulada": "ANULADA"
+        }
+        estado_backend = estado_map.get(estado, estado.upper())
+        query = query.filter(Factura.estado_factura == estado_backend)
     
     if fecha_desde:
         query = query.filter(Factura.fecha_emision >= fecha_desde)
@@ -302,6 +348,10 @@ def buscar_facturas(
     
     if numero_factura:
         query = query.filter(Factura.numero_factura.like(f"%{numero_factura}%"))
+    
+    if codigo_cliente:
+        # Filtrar por código de cliente
+        query = query.join(Cliente).filter(Cliente.codigo_cliente == codigo_cliente)
     
     return query.order_by(desc(Factura.fecha_emision)).limit(limit).offset(offset).all()
 
@@ -392,6 +442,40 @@ def obtener_reporte_ventas_periodo(
         'productos_mas_vendidos': productos_top
     }
 
+def marcar_factura_pagada(db: Session, factura_id: int, usuario: str) -> Factura:
+    """Marcar factura como pagada"""
+    
+    factura = db.query(Factura).filter(Factura.id_factura == factura_id).first()
+    if not factura:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Factura no encontrada"
+        )
+    
+    if factura.estado_factura == 'ANULADA':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede marcar como pagada una factura anulada"
+        )
+    
+    if factura.estado_factura == 'PAGADA':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La factura ya está marcada como pagada"
+        )
+    
+    try:
+        factura.estado_factura = 'PAGADA'
+        db.commit()
+        db.refresh(factura)
+        return factura
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error al marcar factura como pagada: {str(e)}"
+        )
+
 def anular_factura(db: Session, factura_id: int, motivo: str, usuario: str) -> Factura:
     """Anular una factura, restaurar stock y sus asientos contables"""
     
@@ -419,7 +503,7 @@ def anular_factura(db: Session, factura_id: int, motivo: str, usuario: str) -> F
                 Producto.id_producto == detalle.id_producto
             ).first()
             
-            if producto and producto.maneja_inventario and producto.tipo_producto == 'PRODUCTO':
+            if producto and producto.maneja_inventario:
                 # Devolver la cantidad al stock
                 cantidad_devolver = Decimal(str(detalle.cantidad))
                 producto.stock_actual = float(Decimal(str(producto.stock_actual)) + cantidad_devolver)
@@ -702,11 +786,11 @@ def obtener_reporte_tendencias(
     }
 
 def obtener_configuracion_facturacion(db: Session) -> ConfiguracionFacturacion:
-    """Obtener configuración activa de facturación"""
+    """Obtener configuración activa de facturación con lock pesimista"""
     
     config = db.query(ConfiguracionFacturacion).filter(
         ConfiguracionFacturacion.activo == True
-    ).first()
+    ).with_for_update().first()
     
     if not config:
         # Si no existe configuración, crear una por defecto

@@ -8,14 +8,14 @@ from typing import List, Optional
 from datetime import date
 from app.db import get_db
 from app.schemas.facturacion import (
-    ClienteCreate, ClienteUpdate, ClienteRead,
-    ProductoCreate, ProductoUpdate, ProductoRead,
-    FacturaCreate, FacturaRead, DetalleFacturaCreate, FacturaCompleta,
+    ClienteCreate, ClienteRead,
+    ProductoCreate, ProductoRead,
+    FacturaCreate, FacturaRead, FacturaCompleta,
     ConfiguracionFacturacionCreate, ConfiguracionFacturacionUpdate, ConfiguracionFacturacionRead
 )
 from app.services.facturacion_service import (
     crear_cliente, crear_producto, crear_factura_completa, obtener_facturas_cliente,
-    obtener_reporte_ventas_periodo, anular_factura, obtener_cuentas_por_cobrar,
+    obtener_reporte_ventas_periodo, anular_factura, marcar_factura_pagada, obtener_cuentas_por_cobrar,
     obtener_reporte_ventas_por_cliente, obtener_reporte_ventas_por_producto,
     obtener_reporte_tendencias, obtener_configuracion_facturacion,
     crear_configuracion_facturacion, actualizar_configuracion_facturacion
@@ -100,13 +100,14 @@ def listar_facturas(
     fecha_desde: Optional[date] = Query(None),
     fecha_hasta: Optional[date] = Query(None),
     numero_factura: Optional[str] = Query(None),
+    codigo_cliente: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
     """Listar todas las facturas con filtros opcionales"""
     from app.services.facturacion_service import buscar_facturas
-    return buscar_facturas(db, estado, fecha_desde, fecha_hasta, numero_factura, limit, offset)
+    return buscar_facturas(db, estado, fecha_desde, fecha_hasta, numero_factura, codigo_cliente, limit, offset)
 
 @router.get("/facturas/cliente/{cliente_id}", response_model=List[FacturaRead])
 def obtener_facturas_por_cliente(
@@ -136,14 +137,24 @@ def obtener_factura_completa(
     db: Session = Depends(get_db)
 ):
     """Obtener factura con datos completos del cliente y productos"""
-    from app.models.facturacion import DetalleFactura
     
     factura = db.query(Factura).filter(Factura.id_factura == factura_id).first()
     if not factura:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
     
-    # Obtener cliente
+    # Obtener cliente (retornar diccionario vacío si no existe)
     cliente = db.query(Cliente).filter(Cliente.id_cliente == factura.id_cliente).first()
+    if not cliente:
+        # Crear un diccionario con datos por defecto si no se encuentra el cliente
+        cliente = {
+            "id_cliente": factura.id_cliente,
+            "nombre": "Cliente no encontrado",
+            "nit": "N/A",
+            "direccion": "N/A",
+            "telefono_principal": "N/A",
+            "email": "N/A",
+            "estado_cliente": "INACTIVO"
+        }
     
     # Obtener detalles con información de productos
     detalles_completos = []
@@ -201,10 +212,23 @@ def obtener_factura_completa(
     
     return factura_completa
 
+@router.patch("/facturas/{factura_id}/marcar-pagada")
+def marcar_factura_como_pagada(
+    factura_id: int,
+    db: Session = Depends(get_db)
+):
+    """Marcar factura como pagada"""
+    factura_pagada = marcar_factura_pagada(db, factura_id, "API_USER")
+    return {
+        "message": "Factura marcada como pagada exitosamente",
+        "factura_id": factura_pagada.id_factura,
+        "nuevo_estado": factura_pagada.estado_factura
+    }
+
 @router.post("/facturas/{factura_id}/anular")
 def anular_factura_endpoint(
     factura_id: int,
-    motivo: str,
+    motivo: str = Query(..., description="Motivo de la anulación"),
     db: Session = Depends(get_db)
 ):
     """Anular una factura"""
@@ -282,5 +306,3 @@ def actualizar_configuracion(
 ):
     """Actualizar configuración activa de facturación"""
     return actualizar_configuracion_facturacion(db, config)
-    """Generar reporte de tendencias de ventas"""
-    return obtener_reporte_tendencias(db, fecha_desde, fecha_hasta)

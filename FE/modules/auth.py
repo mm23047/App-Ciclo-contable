@@ -428,7 +428,6 @@ def render_login_page(backend_url: str):
                     # Intentar autenticación
                     if authenticate_user(backend_url, username, password):
                         st.success("✅ Inicio de sesión exitoso!")
-                        st.balloons()
                         st.rerun()
                     else:
                         st.error("❌ Usuario o contraseña incorrectos")
@@ -513,7 +512,6 @@ def render_login_page(backend_url: str):
                     # Intentar registro
                     if register_user(backend_url, username_reg, email, password_reg, nombre_completo):
                         st.success("✅ ¡Cuenta creada exitosamente! Redirigiendo...")
-                        st.balloons()
                         st.session_state['mostrar_registro'] = False
                         time.sleep(1)
                         st.rerun()

@@ -218,7 +218,6 @@ def crear_producto_completo(backend_url: str, datos_producto: Dict[str, Any]):
         if response.status_code == 201:
             producto_creado = response.json()
             st.success(f"✅ Producto '{datos_producto['nombre']}' registrado exitosamente!")
-            st.balloons()
             
             # Mostrar resumen del producto creado
             with st.expander("📄 Resumen del Producto Registrado", expanded=True):

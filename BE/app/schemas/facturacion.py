@@ -135,6 +135,7 @@ class FacturaCreate(BaseModel):
     fecha_vencimiento: Optional[date] = None
     id_cliente: int
     metodo_pago: Optional[str] = Field(None, max_length=30)
+    condiciones_pago: Optional[str] = Field(None, max_length=100, description="Condiciones de pago")
     observaciones: Optional[str] = None
     usuario_creacion: str = Field(..., min_length=1, max_length=50)
     detalles: List[DetalleFacturaCreate] = Field(..., min_items=1, description="Detalles de la factura")

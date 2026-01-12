@@ -12,6 +12,31 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io
 
+def convertir_a_float_seguro(df: pd.DataFrame, columna: str) -> pd.DataFrame:
+    """
+    Convertir columna a float de manera segura, manejando strings con comas,
+    decimales, y valores ya numéricos.
+    """
+    if columna not in df.columns:
+        return df
+    
+    def safe_convert(valor):
+        if pd.isna(valor):
+            return 0.0
+        if isinstance(valor, (int, float)):
+            return float(valor)
+        if isinstance(valor, str):
+            # Remover comas y espacios
+            valor_limpio = valor.replace(',', '').replace(' ', '').strip()
+            try:
+                return float(valor_limpio)
+            except (ValueError, AttributeError):
+                return 0.0
+        return 0.0
+    
+    df[columna] = df[columna].apply(safe_convert)
+    return df
+
 def render_page(backend_url: str):
     """Renderizar página de reportes de ventas"""
     
@@ -236,7 +261,7 @@ def generar_dashboard_simulado(backend_url: str, fecha_inicio: date, fecha_fin: 
             ticket_promedio = ventas_totales / total_facturas if total_facturas > 0 else 0.0
             
             # Clientes únicos
-            clientes_unicos = len(set(f.get('cliente_id') for f in facturas if f.get('cliente_id')))
+            clientes_unicos = len(set(f.get('id_cliente') for f in facturas if f.get('id_cliente')))
             
             # Mostrar métricas
             col1, col2, col3, col4 = st.columns(4)
@@ -272,7 +297,7 @@ def generar_graficos_basicos(facturas: List[Dict]):
     
     # Convertir columna total a float para evitar concatenación de strings
     if 'total' in df_facturas.columns:
-        df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+        df_facturas = convertir_a_float_seguro(df_facturas, 'total')
     
     # Gráfico de ventas por día
     if 'fecha_emision' in df_facturas.columns:
@@ -379,7 +404,7 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                 
                 # Convertir columna total a float para evitar concatenación de strings
                 if 'total' in df_facturas.columns:
-                    df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+                    df_facturas = convertir_a_float_seguro(df_facturas, 'total')
                 
                 # Resumen del período
                 col1, col2, col3, col4 = st.columns(4)
@@ -396,7 +421,7 @@ def generar_reporte_periodo(backend_url: str, fecha_desde: date, fecha_hasta: da
                     st.metric("Ticket Promedio", f"${ticket_promedio:,.2f}")
                 
                 with col4:
-                    clientes_unicos = df_facturas['cliente_id'].nunique() if 'cliente_id' in df_facturas.columns else 0
+                    clientes_unicos = df_facturas['id_cliente'].nunique() if 'id_cliente' in df_facturas.columns else 0
                     st.metric("Clientes", clientes_unicos)
                 
                 # Tabla detallada
@@ -483,10 +508,10 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                 
                 # Convertir columna total a float para evitar concatenación de strings
                 if 'total' in df_facturas.columns:
-                    df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+                    df_facturas = convertir_a_float_seguro(df_facturas, 'total')
                 
-                if 'cliente_id' in df_facturas.columns:
-                    ventas_cliente = df_facturas.groupby('cliente_id').agg({
+                if 'id_cliente' in df_facturas.columns:
+                    ventas_cliente = df_facturas.groupby('id_cliente').agg({
                         'total': ['sum', 'count', 'mean'],
                         'fecha_emision': ['min', 'max']
                     }).round(2)
@@ -496,7 +521,7 @@ def generar_reporte_clientes(backend_url: str, fecha_desde: date, fecha_hasta: d
                     ventas_cliente = ventas_cliente.reset_index()
                     
                     # Agregar información del cliente
-                    ventas_cliente['Nombre_Cliente'] = ventas_cliente['cliente_id'].apply(
+                    ventas_cliente['Nombre_Cliente'] = ventas_cliente['id_cliente'].apply(
                         lambda x: clientes_dict.get(x, {}).get('nombre_completo', f'Cliente {x}')
                     )
                     
@@ -671,13 +696,13 @@ def calcular_metricas_periodo(facturas: List[Dict]) -> Dict[str, Any]:
     
     # Convertir columna total a float para evitar concatenación de strings
     if 'total' in df.columns:
-        df['total'] = df['total'].astype(str).str.replace(',', '').astype(float)
+        df = convertir_a_float_seguro(df, 'total')
     
     return {
         'total_facturas': len(facturas),
         'ventas_totales': float(df['total'].sum()),
         'ticket_promedio': float(df['total'].mean()),
-        'clientes_unicos': df['cliente_id'].nunique() if 'cliente_id' in df.columns else 0
+        'clientes_unicos': df['id_cliente'].nunique() if 'id_cliente' in df.columns else 0
     }
 
 def mostrar_comparativo_metricas(metricas1: Dict, metricas2: Dict, p1_inicio: date, p1_fin: date, p2_inicio: date, p2_fin: date):
@@ -825,7 +850,7 @@ def generar_analisis_detallado(backend_url: str, fecha_desde: date, fecha_hasta:
             
             # Convertir columna total a float
             if 'total' in df_facturas.columns:
-                df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+                df_facturas = convertir_a_float_seguro(df_facturas, 'total')
             
             # Convertir fecha_emision a datetime
             df_facturas['fecha_emision'] = pd.to_datetime(df_facturas['fecha_emision'])
@@ -1280,7 +1305,7 @@ def generar_excel(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fe
             
             # Convertir columna total a float para evitar concatenación de strings
             if 'total' in df_facturas.columns:
-                df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+                df_facturas = convertir_a_float_seguro(df_facturas, 'total')
             
             # Formatear fecha_emision si existe
             if 'fecha_emision' in df_facturas.columns:
@@ -1342,7 +1367,7 @@ def generar_csv(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fech
         
         # Convertir columna total a float
         if 'total' in df_facturas.columns:
-            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+            df_facturas = convertir_a_float_seguro(df_facturas, 'total')
         
         # Formatear fecha_emision si existe
         if 'fecha_emision' in df_facturas.columns:
@@ -1440,7 +1465,7 @@ def generar_pdf(facturas: List[Dict], tipo_reporte: str, fecha_desde: date, fech
         
         # Convertir columna total a float
         if 'total' in df_facturas.columns:
-            df_facturas['total'] = df_facturas['total'].astype(str).str.replace(',', '').astype(float)
+            df_facturas = convertir_a_float_seguro(df_facturas, 'total')
         
         # Resumen ejecutivo si está habilitado
         if incluir_resumen:

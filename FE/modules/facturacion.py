@@ -19,6 +19,27 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from openpyxl.styles import Font, PatternFill, Alignment
 
+def formatear_fecha_seguro(fecha_valor, formato_corto=True):
+    """
+    Formatea una fecha de forma segura, manejando valores None.
+    
+    Args:
+        fecha_valor: Fecha en formato string, datetime o None
+        formato_corto: Si True, retorna solo los primeros 10 caracteres (YYYY-MM-DD)
+    
+    Returns:
+        String con la fecha formateada o 'N/A' si es None
+    """
+    if fecha_valor is None:
+        return 'N/A'
+    
+    fecha_str = str(fecha_valor)
+    
+    if formato_corto and len(fecha_str) >= 10:
+        return fecha_str[:10]
+    
+    return fecha_str if fecha_str else 'N/A'
+
 def render_page(backend_url: str):
     """Renderizar página de facturación"""
     
@@ -158,7 +179,7 @@ def crear_nueva_factura(backend_url: str):
         
         with col1:
             opciones_productos = [
-                f"{p['codigo_producto']} - {p['nombre']} - ${float(p.get('precio_venta', 0)):,.2f}"
+                f"{p['codigo_producto']} - {p['nombre']}"
                 for p in productos if p.get('estado_producto') == 'ACTIVO'
             ]
             
@@ -172,17 +193,17 @@ def crear_nueva_factura(backend_url: str):
             cantidad = st.number_input("Cantidad:", min_value=0.01, value=1.0, step=0.01, key="cant_factura")
         
         with col3:
-            # Obtener precio del producto seleccionado
+            # Obtener precio del producto seleccionado (no editable)
             precio_unitario = 0.0
-            precio_key = "precio_factura"
             if producto_sel:
                 codigo_prod = producto_sel.split(" - ")[0]
                 prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                 if prod_obj:
                     precio_unitario = float(prod_obj.get('precio_venta', 0))
-                    precio_key = f"precio_factura_{codigo_prod}"
             
-            precio = st.number_input("Precio Unit.:", value=precio_unitario, step=0.01, key=precio_key)
+            # Mostrar precio como texto no editable
+            st.text_input("Precio Unit.:", value=f"${precio_unitario:,.2f}", disabled=True, key="precio_factura_display")
+            precio = precio_unitario  # Usar el precio del producto
         
         with col4:
             descuento = st.number_input("Desc. %:", min_value=0.0, max_value=100.0, value=0.0, step=0.1, key="desc_factura")
@@ -194,22 +215,32 @@ def crear_nueva_factura(backend_url: str):
         with col6:
             st.write("")  # Espaciado
             if st.button("➕ Agregar", key="add_prod_factura"):
-                if producto_sel and cantidad > 0 and precio > 0:
+                if not producto_sel:
+                    st.error("❌ Debe seleccionar un producto")
+                elif cantidad <= 0:
+                    st.error("❌ La cantidad debe ser mayor a 0")
+                elif precio <= 0:
+                    st.error("❌ El precio unitario debe ser mayor a 0")
+                else:
                     codigo_prod = producto_sel.split(" - ")[0]
                     prod_obj = next((p for p in productos if p['codigo_producto'] == codigo_prod), None)
                     
-                    nuevo_item = {
-                        'id_producto': prod_obj['id_producto'],
-                        'codigo_producto': codigo_prod,
-                        'nombre_producto': prod_obj['nombre'],
-                        'cantidad': cantidad,
-                        'precio_unitario': precio,
-                        'descuento_porcentaje': descuento,
-                        'subtotal': subtotal
-                    }
-                    
-                    st.session_state.productos_factura.append(nuevo_item)
-                    st.rerun()
+                    if not prod_obj:
+                        st.error("❌ Error: Producto no encontrado")
+                    else:
+                        nuevo_item = {
+                            'id_producto': prod_obj['id_producto'],
+                            'codigo_producto': codigo_prod,
+                            'nombre_producto': prod_obj['nombre'],
+                            'cantidad': cantidad,
+                            'precio_unitario': precio,
+                            'descuento_porcentaje': descuento,
+                            'subtotal': subtotal
+                        }
+                        
+                        st.session_state.productos_factura.append(nuevo_item)
+                        st.success(f"✅ Producto '{prod_obj['nombre']}' agregado")
+                        st.rerun()
     
     # Mostrar productos agregados
     if st.session_state.productos_factura:
@@ -282,6 +313,7 @@ def crear_nueva_factura(backend_url: str):
         html_productos = """<table class="productos-table">
 <thead>
 <tr>
+    <th>#</th>
     <th>Producto</th>
     <th class="text-right">Cantidad</th>
     <th class="text-right">Precio Unit.</th>
@@ -294,7 +326,7 @@ def crear_nueva_factura(backend_url: str):
 <tbody>"""
         
         # Agregar filas de productos
-        for item in st.session_state.productos_factura:
+        for idx, item in enumerate(st.session_state.productos_factura, 1):
             iva_linea = item['subtotal'] * iva_porcentaje
             total_linea = item['subtotal'] + iva_linea
             
@@ -302,6 +334,7 @@ def crear_nueva_factura(backend_url: str):
             
             html_productos += f"""
 <tr>
+    <td class="text-center">{idx}</td>
     <td>
         <div class="producto-codigo">{item['codigo_producto']}</div>
         <div class="producto-nombre">{item['nombre_producto']}</div>
@@ -320,13 +353,13 @@ def crear_nueva_factura(backend_url: str):
         
         st.markdown(html_productos, unsafe_allow_html=True)
         
-        # Botones para eliminar productos
-        st.markdown("")
-        cols_delete = st.columns(len(st.session_state.productos_factura) if len(st.session_state.productos_factura) <= 5 else 5)
-        for i, item in enumerate(st.session_state.productos_factura):
-            col_idx = i if i < 5 else i % 5
+        # Botones para eliminar productos organizados por índice
+        st.markdown("##### 🗑️ Eliminar productos:")
+        cols_delete = st.columns(min(len(st.session_state.productos_factura), 6))
+        for i in range(len(st.session_state.productos_factura)):
+            col_idx = i % 6
             with cols_delete[col_idx]:
-                if st.button(f"🗑️ {item['nombre_producto'][:15]}...", key=f"del_prod_{i}", help=f"Eliminar {item['nombre_producto']}"):
+                if st.button(f"❌ #{i+1}", key=f"del_prod_{i}", help=f"Eliminar: {st.session_state.productos_factura[i]['nombre_producto']}", width="stretch"):
                     st.session_state.productos_factura.pop(i)
                     st.rerun()
         
@@ -506,7 +539,7 @@ def crear_factura_backend(
                 "descripcion_personalizada": None,
                 "cantidad": float(item['cantidad']),
                 "precio_unitario": float(item['precio_unitario']),
-                "descuento_linea": float(item['descuento_porcentaje'])
+                "descuento_linea": 0.0  # Descuento como monto fijo (no implementado en UI)
             }
             for idx, item in enumerate(productos)
         ]
@@ -518,6 +551,7 @@ def crear_factura_backend(
             "fecha_vencimiento": fecha_vencimiento.isoformat(),
             "id_cliente": cliente['id_cliente'],
             "metodo_pago": tipo_factura,
+            "condiciones_pago": f"Pago {tipo_factura.lower()}",
             "observaciones": observaciones if observaciones else None,
             "usuario_creacion": "SISTEMA",
             "detalles": detalles
@@ -610,7 +644,7 @@ def gestion_facturas(backend_url: str):
     with col2:
         numero_factura = st.text_input("Número de factura:", help="Buscar por número específico")
     
-    if st.button("🔍 Buscar Facturas", use_container_width=True):
+    if st.button("🔍 Buscar Facturas", width="stretch"):
         # Guardar búsqueda en session_state
         buscar_facturas(
             backend_url,
@@ -710,9 +744,11 @@ def mostrar_facturas(facturas: List[Dict], backend_url: str):
     
     # Formatear fechas y valores
     if 'fecha_emision' in df_display.columns:
-        df_display['fecha_factura'] = pd.to_datetime(df_display['fecha_emision']).dt.strftime('%d/%m/%Y')
+        df_display['fecha_factura'] = pd.to_datetime(df_display['fecha_emision'], errors='coerce').dt.strftime('%d/%m/%Y')
+        df_display['fecha_factura'] = df_display['fecha_factura'].fillna('N/A')
     if 'fecha_vencimiento' in df_display.columns:
-        df_display['fecha_vencimiento'] = pd.to_datetime(df_display['fecha_vencimiento']).dt.strftime('%d/%m/%Y')
+        df_display['fecha_vencimiento'] = pd.to_datetime(df_display['fecha_vencimiento'], errors='coerce').dt.strftime('%d/%m/%Y')
+        df_display['fecha_vencimiento'] = df_display['fecha_vencimiento'].fillna('N/A')
     
     for col in ['subtotal', 'impuesto_iva', 'total']:
         if col in df_display.columns:
@@ -755,36 +791,130 @@ def mostrar_facturas(facturas: List[Dict], backend_url: str):
         if factura_seleccionada_idx is not None:
             factura_seleccionada = facturas[factura_seleccionada_idx]
             
+            # Detectar cambio de factura y limpiar estados de diálogo
+            factura_id_actual = factura_seleccionada.get('id_factura')
+            if 'factura_id_anterior' not in st.session_state:
+                st.session_state.factura_id_anterior = factura_id_actual
+            
+            # Si cambió la factura seleccionada, limpiar estados de diálogo
+            if st.session_state.factura_id_anterior != factura_id_actual:
+                st.session_state.mostrar_detalle = False
+                st.session_state.mostrar_anular = False
+                st.session_state.factura_id_anterior = factura_id_actual
+            
             st.markdown("---")
             
-            # Mostrar información de la factura seleccionada
+            # Mostrar información de la factura seleccionada con badges de estado
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.info(f"**Factura:** {factura_seleccionada.get('numero_factura', 'N/A')}")
             with col2:
-                st.info(f"**Estado:** {factura_seleccionada.get('estado_factura', 'N/A')}")
+                # Badge con color según el estado
+                estado = factura_seleccionada.get('estado_factura', 'N/A')
+                color_estado = {
+                    'EMITIDA': '🟡',
+                    'PAGADA': '🟢',
+                    'ANULADA': '🔴',
+                    'VENCIDA': '🟠'
+                }.get(estado, '⚪')
+                st.info(f"**Estado:** {color_estado} {estado}")
             with col3:
                 st.info(f"**Total:** ${float(factura_seleccionada.get('total', 0)):,.2f}")
             
             st.markdown("### 🔧 Acciones Disponibles")
             
+            # Obtener estado actual de la factura
+            estado_factura = factura_seleccionada.get('estado_factura', 'EMITIDA')
+            
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                if st.button("👁️ Ver Detalles", use_container_width=True):
+                if st.button("👁️ Ver Detalles", width="stretch"):
                     st.session_state.mostrar_detalle = True
             
             with col2:
-                if st.button("💰 Marcar como Pagada", use_container_width=True):
-                    marcar_como_pagada(backend_url, factura_seleccionada['id_factura'])
+                # Solo permitir marcar como pagada si NO está PAGADA ni ANULADA
+                puede_marcar_pagada = estado_factura not in ['PAGADA', 'ANULADA']
+                
+                if puede_marcar_pagada:
+                    if st.button("💰 Marcar como Pagada", width="stretch", type="primary"):
+                        marcar_como_pagada(backend_url, factura_seleccionada)
+                else:
+                    st.button(
+                        "💰 Ya Pagada" if estado_factura == 'PAGADA' else "💰 Anulada",
+                        width="stretch",
+                        disabled=True,
+                        help="Esta factura no puede marcarse como pagada"
+                    )
             
-            with col3:
-                if st.button("📥 Descargar", use_container_width=True, type="primary"):
-                    st.session_state.mostrar_descarga = True
+            # Obtener factura completa una sola vez para todas las descargas
+            try:
+                response = requests.get(f"{backend_url}/api/facturacion/facturas/{factura_seleccionada['id_factura']}/completa")
+                if response.status_code == 200:
+                    factura_completa = response.json()
+                else:
+                    factura_completa = factura_seleccionada
+            except:
+                factura_completa = factura_seleccionada
             
-            with col4:
-                if st.button("❌ Anular", use_container_width=True):
-                    st.session_state.mostrar_anular = True
+            # Sección de descargas (1 clic directo para cada formato)
+            st.markdown("### 📥 Descargar Factura")
+            col_pdf, col_excel, col_json, col_anular = st.columns(4)
+            
+            with col_pdf:
+                pdf_data = generar_pdf_factura_data(factura_completa, backend_url)
+                if pdf_data:
+                    numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+                    fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+                    st.download_button(
+                        label="📄 PDF",
+                        data=pdf_data,
+                        file_name=f"FV_{numero_factura}_{fecha}.pdf",
+                        mime="application/pdf",
+                        type="primary",
+                        use_container_width=True
+                    )
+            
+            with col_excel:
+                excel_data = generar_excel_factura_data(factura_completa, backend_url)
+                if excel_data:
+                    numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+                    fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+                    st.download_button(
+                        label="📊 Excel",
+                        data=excel_data,
+                        file_name=f"FV_{numero_factura}_{fecha}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+            
+            with col_json:
+                json_data = generar_json_factura_data(factura_completa, backend_url)
+                if json_data:
+                    numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+                    fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+                    st.download_button(
+                        label="📋 JSON",
+                        data=json_data,
+                        file_name=f"FV_{numero_factura}_{fecha}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+            
+            with col_anular:
+                # Solo permitir anular si NO está ANULADA
+                puede_anular = estado_factura != 'ANULADA'
+                
+                if puede_anular:
+                    if st.button("❌ Anular", width="stretch"):
+                        st.session_state.mostrar_anular = True
+                else:
+                    st.button(
+                        "❌ Ya Anulada",
+                        width="stretch",
+                        disabled=True,
+                        help="Esta factura ya fue anulada"
+                    )
             
             # Mostrar secciones según botones presionados
             if st.session_state.get('mostrar_detalle', False):
@@ -793,21 +923,26 @@ def mostrar_facturas(facturas: List[Dict], backend_url: str):
                     st.session_state.mostrar_detalle = False
                     st.rerun()
             
-            if st.session_state.get('mostrar_descarga', False):
-                mostrar_opciones_descarga(factura_seleccionada, backend_url)
-                if st.button("🔙 Cerrar Descarga"):
-                    st.session_state.mostrar_descarga = False
-                    st.rerun()
-            
             if st.session_state.get('mostrar_anular', False):
                 st.warning("⚠️ ¿Estás seguro de que deseas anular esta factura?")
+                st.info(f"📄 Factura: {factura_seleccionada['numero_factura']} | Total: ${float(factura_seleccionada['total']):,.2f}")
+                
+                # Campo para ingresar motivo
+                motivo_anulacion = st.text_area(
+                    "Motivo de la anulación:",
+                    value="",
+                    placeholder="Ej: Error en datos del cliente, duplicada, etc.",
+                    height=80,
+                    help="Ingrese el motivo por el cual se anula la factura"
+                )
+                
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("✅ Sí, Anular", type="primary", use_container_width=True):
-                        anular_factura(backend_url, factura_seleccionada['id_factura'])
+                    if st.button("✅ Sí, Anular", type="primary", width="stretch", disabled=not motivo_anulacion.strip()):
+                        anular_factura(backend_url, factura_seleccionada, motivo_anulacion.strip())
                         st.session_state.mostrar_anular = False
                 with col2:
-                    if st.button("❌ Cancelar", use_container_width=True):
+                    if st.button("❌ Cancelar", width="stretch"):
                         st.session_state.mostrar_anular = False
                         st.rerun()
 
@@ -830,8 +965,8 @@ def mostrar_detalle_factura(factura: Dict, backend_url: str):
         with col1:
             st.markdown("**📋 Información General:**")
             st.text(f"Número: {factura_completa.get('numero_factura', 'N/A')}")
-            st.text(f"Fecha: {factura_completa.get('fecha_emision', 'N/A')[:10]}")
-            st.text(f"Vencimiento: {factura_completa.get('fecha_vencimiento', 'N/A')[:10]}")
+            st.text(f"Fecha: {formatear_fecha_seguro(factura_completa.get('fecha_emision'), True)}")
+            st.text(f"Vencimiento: {formatear_fecha_seguro(factura_completa.get('fecha_vencimiento'), True)}")
             st.text(f"Estado: {factura_completa.get('estado_factura', 'N/A')}")
             st.text(f"Tipo: {factura_completa.get('tipo_factura', 'N/A')}")
         
@@ -881,7 +1016,7 @@ def mostrar_detalle_factura(factura: Dict, backend_url: str):
             if cols_to_show:
                 df_final = df_items_display[cols_to_show].copy()
                 df_final.columns = col_names
-                st.dataframe(df_final, use_container_width=True, hide_index=True)
+                st.dataframe(df_final, width="stretch", hide_index=True)
 
 
 def mostrar_opciones_descarga(factura: Dict, backend_url: str):
@@ -904,24 +1039,51 @@ def mostrar_opciones_descarga(factura: Dict, backend_url: str):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📄 Descargar PDF", use_container_width=True, type="primary"):
-            generar_pdf_factura(factura_completa, backend_url)
+        pdf_data = generar_pdf_factura_data(factura_completa, backend_url)
+        if pdf_data:
+            numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+            fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+            st.download_button(
+                label="📄 Descargar PDF",
+                data=pdf_data,
+                file_name=f"FV_{numero_factura}_{fecha}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True
+            )
     
     with col2:
-        if st.button("📊 Descargar Excel", use_container_width=True):
-            generar_excel_factura(factura_completa, backend_url)
+        excel_data = generar_excel_factura_data(factura_completa, backend_url)
+        if excel_data:
+            numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+            fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+            st.download_button(
+                label="📊 Descargar Excel",
+                data=excel_data,
+                file_name=f"FV_{numero_factura}_{fecha}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
     
     with col3:
-        if st.button("📋 Descargar JSON", use_container_width=True):
-            generar_json_factura(factura_completa, backend_url)
+        json_data = generar_json_factura_data(factura_completa, backend_url)
+        if json_data:
+            numero_factura = factura_completa.get('numero_factura', 'N/A').replace('/', '-')
+            fecha = formatear_fecha_seguro(factura_completa.get('fecha_emision'), True).replace('-', '')
+            st.download_button(
+                label="📋 Descargar JSON",
+                data=json_data,
+                file_name=f"FV_{numero_factura}_{fecha}.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
 
-def generar_pdf_factura(factura: Dict, backend_url: str):
-    """Generar factura en formato PDF profesional tipo DIAN"""
+def generar_pdf_factura_data(factura: Dict, backend_url: str):
+    """Generar datos de factura en formato PDF profesional tipo DIAN. Retorna buffer de bytes."""
     
     try:
-        # Obtener configuración de empresa e IVA
-        iva_porcentaje = 19.0  # Valor por defecto
+        # Obtener configuración de empresa (solo datos de empresa, no porcentajes fiscales)
         empresa_nombre = "EMPRESA"
         empresa_nit = "N/A"
         empresa_direccion = "N/A"
@@ -931,7 +1093,6 @@ def generar_pdf_factura(factura: Dict, backend_url: str):
             response_config = requests.get(f"{backend_url}/api/facturacion/configuracion")
             if response_config.status_code == 200:
                 config = response_config.json()
-                iva_porcentaje = float(config.get('iva_porcentaje', 19.0))
                 empresa_nombre = config.get('empresa_nombre', 'EMPRESA')
                 empresa_nit = config.get('empresa_nit', 'N/A')
                 empresa_direccion = config.get('empresa_direccion', 'N/A')
@@ -1026,8 +1187,8 @@ def generar_pdf_factura(factura: Dict, backend_url: str):
             elements.append(Spacer(1, 0.1*inch))
             
             # Información de la factura y cliente en dos columnas
-            fecha_emision = factura.get('fecha_emision', 'N/A')[:10] if factura.get('fecha_emision') else 'N/A'
-            fecha_venc = factura.get('fecha_vencimiento', 'N/A')[:10] if factura.get('fecha_vencimiento') else 'N/A'
+            fecha_emision = formatear_fecha_seguro(factura.get('fecha_emision'), True)
+            fecha_venc = formatear_fecha_seguro(factura.get('fecha_vencimiento'), True)
             
             cliente_info = factura.get('cliente', {})
             cliente_nombre = cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A'
@@ -1151,14 +1312,38 @@ def generar_pdf_factura(factura: Dict, backend_url: str):
             # Calcular totales
             subtotal = float(factura.get('subtotal', 0))
             iva = float(factura.get('impuesto_iva', 0))
+            retencion_fuente = float(factura.get('retencion_fuente', 0))
+            reteica = float(factura.get('reteica', 0))
             total = float(factura.get('total', 0))
             
-            # Tabla de totales separada
+            # Calcular porcentajes reales de la factura (no usar config actual para mantener coherencia histórica)
+            iva_porcentaje_factura = (iva / subtotal * 100) if subtotal > 0 and iva > 0 else 0.0
+            retefuente_porcentaje_factura = (retencion_fuente / subtotal * 100) if subtotal > 0 and retencion_fuente > 0 else 0.0
+            reteica_porcentaje_factura = (reteica / subtotal * 100) if subtotal > 0 and reteica > 0 else 0.0
+            
+            # Tabla de totales separada con retenciones
             totales_data = [
                 [Paragraph('<b>Subtotal:</b>', normal_style), Paragraph(f"${subtotal:,.2f}", normal_style)],
-                [Paragraph(f'<b>IVA ({iva_porcentaje:.0f}%):</b>', normal_style), Paragraph(f"${iva:,.2f}", normal_style)],
-                [Paragraph('<b>TOTAL A PAGAR:</b>', header_style), Paragraph(f"<b>${total:,.2f}</b>", header_style)]
+                [Paragraph(f'<b>IVA ({iva_porcentaje_factura:.1f}%):</b>', normal_style), Paragraph(f"${iva:,.2f}", normal_style)]
             ]
+            
+            # Agregar retenciones si existen
+            if retencion_fuente > 0:
+                totales_data.append([
+                    Paragraph(f'<b>Ret. Fuente ({retefuente_porcentaje_factura:.2f}%):</b>', normal_style), 
+                    Paragraph(f"-${retencion_fuente:,.2f}", normal_style)
+                ])
+            
+            if reteica > 0:
+                totales_data.append([
+                    Paragraph(f'<b>ReteICA ({reteica_porcentaje_factura:.3f}%):</b>', normal_style), 
+                    Paragraph(f"-${reteica:,.2f}", normal_style)
+                ])
+            
+            totales_data.append([
+                Paragraph('<b>TOTAL A PAGAR:</b>', header_style), 
+                Paragraph(f"<b>${total:,.2f}</b>", header_style)
+            ])
             
             tabla_totales = Table(totales_data, colWidths=[2*inch, 1.5*inch])
             tabla_totales.setStyle(TableStyle([
@@ -1215,28 +1400,17 @@ def generar_pdf_factura(factura: Dict, backend_url: str):
             # Construir PDF
             doc.build(elements)
             
-            # Preparar descarga
+            # Retornar datos para descarga
             buffer.seek(0)
-            nombre_archivo = f"FV_{numero_factura.replace('/', '-')}_{fecha_emision.replace('-', '')}.pdf"
-            
-            st.download_button(
-                label="📥 Descargar PDF",
-                data=buffer,
-                file_name=nombre_archivo,
-                mime="application/pdf",
-                type="primary",
-                use_container_width=True
-            )
-            
-            st.success("✅ Factura PDF generada exitosamente")
+            return buffer.getvalue()
             
     except Exception as e:
         st.error(f"❌ Error al generar PDF: {str(e)}")
-        st.exception(e)
+        return None
 
 
-def generar_excel_factura(factura: Dict, backend_url: str):
-    """Generar factura en formato Excel profesional tipo DIAN"""
+def generar_excel_factura_data(factura: Dict, backend_url: str):
+    """Generar datos de factura en formato Excel profesional tipo DIAN. Retorna buffer de bytes."""
     
     try:
         # Obtener configuración de empresa e IVA
@@ -1301,8 +1475,8 @@ def generar_excel_factura(factura: Dict, backend_url: str):
                 
                 datos_factura_cliente = [
                     ('No. Factura:', factura.get('numero_factura', 'N/A'), 'Razón Social:', cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
-                    ('Fecha Emisión:', factura.get('fecha_emision', 'N/A')[:10], 'NIT/CC:', cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
-                    ('Fecha Vencimiento:', factura.get('fecha_vencimiento', 'N/A')[:10], 'Dirección:', cliente_info.get('direccion', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('Fecha Emisión:', formatear_fecha_seguro(factura.get('fecha_emision'), True), 'NIT/CC:', cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
+                    ('Fecha Vencimiento:', formatear_fecha_seguro(factura.get('fecha_vencimiento'), True), 'Dirección:', cliente_info.get('direccion', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
                     ('Estado:', factura.get('estado', 'N/A').upper(), 'Teléfono:', cliente_info.get('telefono_principal', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
                     ('', '', 'Email:', cliente_info.get('email', 'N/A') if isinstance(cliente_info, dict) else 'N/A'),
                 ]
@@ -1431,7 +1605,7 @@ def generar_excel_factura(factura: Dict, backend_url: str):
                     ],
                     'INFORMACIÓN': [
                         factura.get('numero_factura', 'N/A'),
-                        factura.get('fecha_emision', 'N/A')[:10],
+                        formatear_fecha_seguro(factura.get('fecha_emision'), True),
                         cliente_info.get('nombre', 'N/A') if isinstance(cliente_info, dict) else 'N/A',
                         cliente_info.get('nit', 'N/A') if isinstance(cliente_info, dict) else 'N/A',
                         '',
@@ -1441,7 +1615,7 @@ def generar_excel_factura(factura: Dict, backend_url: str):
                         '',
                         factura.get('estado', 'N/A').upper(),
                         len(detalles),
-                        factura.get('fecha_vencimiento', 'N/A')[:10]
+                        formatear_fecha_seguro(factura.get('fecha_vencimiento'), True)
                     ]
                 }
                 
@@ -1468,27 +1642,14 @@ def generar_excel_factura(factura: Dict, backend_url: str):
                 workbook.remove(workbook['Sheet'])
             
             output.seek(0)
-            numero_factura = factura.get('numero_factura', 'N/A').replace('/', '-')
-            fecha = factura.get('fecha_emision', 'N/A')[:10].replace('-', '')
-            nombre_archivo = f"FV_{numero_factura}_{fecha}.xlsx"
-            
-            st.download_button(
-                label="📥 Descargar Excel",
-                data=output,
-                file_name=nombre_archivo,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                use_container_width=True
-            )
-            
-            st.success("✅ Factura Excel generada exitosamente")
+            return output.getvalue()
             
     except Exception as e:
         st.error(f"❌ Error al generar Excel: {str(e)}")
-        st.exception(e)
+        return None
 
 
-def generar_json_factura(factura: Dict, backend_url: str):
+def generar_json_factura_data(factura: Dict, backend_url: str):
     """Generar factura en formato JSON estructurado compatible DIAN"""
     
     try:
@@ -1557,9 +1718,9 @@ def generar_json_factura(factura: Dict, backend_url: str):
                     "numero": factura.get('numero_factura', 'N/A'),
                     "prefijo": "FV",
                     "consecutivo": factura.get('numero_factura', 'N/A').replace('FV-', ''),
-                    "fecha_emision": factura.get('fecha_emision', 'N/A'),
+                    "fecha_emision": formatear_fecha_seguro(factura.get('fecha_emision'), True),
                     "hora_emision": datetime.now().strftime("%H:%M:%S"),
-                    "fecha_vencimiento": factura.get('fecha_vencimiento', 'N/A'),
+                    "fecha_vencimiento": formatear_fecha_seguro(factura.get('fecha_vencimiento'), True),
                     "estado": factura.get('estado', 'N/A').upper(),
                     "tipo_operacion": "VENTA_NACIONAL",
                     "forma_pago": "CONTADO",
@@ -1646,66 +1807,127 @@ def generar_json_factura(factura: Dict, backend_url: str):
             
             # Convertir a JSON con formato
             json_str = json.dumps(factura_json, indent=2, ensure_ascii=False)
-            json_bytes = json_str.encode('utf-8')
-            
-            numero_factura = factura.get('numero_factura', 'N/A').replace('/', '-')
-            fecha = factura.get('fecha_emision', 'N/A')[:10].replace('-', '')
-            nombre_archivo = f"FV_{numero_factura}_{fecha}.json"
-            
-            st.download_button(
-                label="📥 Descargar JSON",
-                data=json_bytes,
-                file_name=nombre_archivo,
-                mime="application/json",
-                type="primary",
-                use_container_width=True
-            )
-            
-            st.success("✅ Factura JSON generada exitosamente (Formato DIAN)")
-            
-            # Mostrar preview
-            with st.expander("👁️ Vista previa del JSON (Compatibilidad DIAN)"):
-                st.json(factura_json)
+            return json_str.encode('utf-8')
             
     except Exception as e:
         st.error(f"❌ Error al generar JSON: {str(e)}")
-        st.exception(e)
+        return None
 
-def marcar_como_pagada(backend_url: str, id_factura: int):
-    """Marcar factura como pagada"""
+def marcar_como_pagada(backend_url: str, factura: Dict):
+    """Marcar factura como pagada con retroalimentación detallada"""
+    
+    id_factura = factura.get('id_factura')
+    numero_factura = factura.get('numero_factura', 'N/A')
+    total = float(factura.get('total', 0))
     
     try:
-        with st.spinner("Actualizando estado de factura..."):
+        with st.spinner(f"Actualizando estado de factura {numero_factura}..."):
             response = requests.patch(
-                f"{backend_url}/api/facturas/{id_factura}/pagar"
+                f"{backend_url}/api/facturacion/facturas/{id_factura}/marcar-pagada"
             )
         
         if response.status_code == 200:
-            st.success("✅ Factura marcada como pagada")
+            resultado = response.json()
+            
+            # Mensaje de éxito con información detallada
+            st.success(f"✅ {resultado.get('message', 'Factura marcada como pagada')}")
+            
+            # Información adicional
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.info(f"📄 **Factura:** {numero_factura}")
+            with col2:
+                st.info(f"💵 **Total:** ${total:,.2f}")
+            with col3:
+                st.info(f"🟢 **Estado:** PAGADA")
+            
+            # Limpiar cache de facturas para forzar actualización
+            if 'facturas_encontradas' in st.session_state:
+                del st.session_state['facturas_encontradas']
+            
+            # Esperar un momento para que el usuario vea los mensajes
+            import time
+            time.sleep(1.5)
             st.rerun()
         else:
-            st.error(f"Error al actualizar factura: {response.status_code}")
+            # Extraer mensaje de error del backend
+            try:
+                error_detail = response.json().get('detail', f'Error HTTP {response.status_code}')
+            except:
+                error_detail = f"Error HTTP {response.status_code}"
             
+            st.error(f"❌ Error al actualizar factura {numero_factura}: {error_detail}")
+            
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Error de conexión al marcar factura {numero_factura} como pagada: {e}")
     except Exception as e:
-        st.error(f"Error al marcar como pagada: {e}")
+        st.error(f"❌ Error inesperado al marcar factura {numero_factura} como pagada: {e}")
 
-def anular_factura(backend_url: str, id_factura: int):
-    """Anular factura"""
+def anular_factura(backend_url: str, factura: Dict, motivo: str = "Anulada por el usuario"):
+    """Anular factura y restaurar inventario con retroalimentación detallada"""
+    
+    id_factura = factura.get('id_factura')
+    numero_factura = factura.get('numero_factura', 'N/A')
+    total = float(factura.get('total', 0))
     
     try:
-        with st.spinner("Anulando factura..."):
-            response = requests.patch(
-                f"{backend_url}/api/facturas/{id_factura}/anular"
+        with st.spinner(f"Anulando factura {numero_factura} y restaurando inventario..."):
+            response = requests.post(
+                f"{backend_url}/api/facturacion/facturas/{id_factura}/anular",
+                params={"motivo": motivo}
             )
         
         if response.status_code == 200:
-            st.success("✅ Factura anulada")
+            resultado = response.json()
+            
+            # Mensaje de éxito principal
+            st.success(f"✅ {resultado.get('message', 'Factura anulada exitosamente')}")
+            
+            # Información detallada de la operación
+            st.markdown("---")
+            st.markdown("### 📋 Detalles de la Anulación")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.info(f"📄 **Factura:** {numero_factura}")
+            with col2:
+                st.info(f"💵 **Total Anulado:** ${total:,.2f}")
+            with col3:
+                st.info(f"🔴 **Estado:** ANULADA")
+            
+            # Información sobre restauración de inventario
+            st.success("📦 **Inventario Restaurado:** Las cantidades de los productos han sido devueltas al stock")
+            
+            # Mostrar motivo registrado
+            with st.expander("📝 Ver Motivo de Anulación", expanded=False):
+                st.text_area(
+                    "Motivo registrado:",
+                    value=motivo,
+                    disabled=True,
+                    height=80
+                )
+            
+            # Limpiar cache de facturas para forzar actualización
+            if 'facturas_encontradas' in st.session_state:
+                del st.session_state['facturas_encontradas']
+            
+            # Esperar un momento para que el usuario vea los mensajes
+            import time
+            time.sleep(2)
             st.rerun()
         else:
-            st.error(f"Error al anular factura: {response.status_code}")
+            # Extraer mensaje de error del backend
+            try:
+                error_detail = response.json().get('detail', f'Error HTTP {response.status_code}')
+            except:
+                error_detail = f"Error HTTP {response.status_code}"
             
+            st.error(f"❌ Error al anular factura {numero_factura}: {error_detail}")
+            
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ Error de conexión al anular factura {numero_factura}: {e}")
     except Exception as e:
-        st.error(f"Error al anular factura: {e}")
+        st.error(f"❌ Error inesperado al anular factura {numero_factura}: {e}")
 
 def reportes_ventas(backend_url: str):
     """Reportes y análisis de ventas"""

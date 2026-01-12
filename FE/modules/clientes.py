@@ -241,7 +241,6 @@ def crear_cliente_completo(backend_url: str, datos_cliente: Dict[str, Any]):
         if response.status_code == 201:
             cliente_creado = response.json()
             st.success(f"✅ Cliente '{datos_cliente['nombre']}' registrado exitosamente!")
-            st.balloons()
             
             # Mostrar resumen del cliente creado
             with st.expander("📄 Resumen del Cliente Registrado", expanded=True):
