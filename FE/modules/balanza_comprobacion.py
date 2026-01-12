@@ -17,16 +17,13 @@ def render_page(backend_url: str):
     st.markdown("Reporte consolidado de saldos de todas las cuentas contables")
     
     # Tabs para organizar funcionalidades
-    tab1, tab2, tab3 = st.tabs(["📊 Generar Balanza", "📈 Análisis Gráfico", "📋 Comparativo"])
+    tab1, tab2 = st.tabs(["📊 Generar Balanza", "📈 Análisis Gráfico"])
     
     with tab1:
         generar_balanza(backend_url)
     
     with tab2:
         analisis_grafico_balanza(backend_url)
-    
-    with tab3:
-        comparativo_periodos(backend_url)
 
 def generar_balanza(backend_url: str):
     """Generar balanza de comprobación"""
@@ -366,26 +363,46 @@ def mostrar_balanza_comprobacion(datos_balanza: Dict[str, Any], formato_detallad
         # Opción de descarga
         st.markdown("### 📥 Descargar Reporte")
         
-        col1, col2 = st.columns(2)
+        # Crear Excel con formato adecuado
+        from io import BytesIO
+        import openpyxl
+        from openpyxl.styles import Font, Alignment
         
-        with col1:
-            # CSV
-            csv = df_final.to_csv(index=False)
-            st.download_button(
-                label="📥 Descargar CSV",
-                data=csv,
-                file_name=f"balanza_comprobacion_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
-            )
+        # Crear archivo Excel
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_final.to_excel(writer, index=False, sheet_name='Balanza de Comprobación')
+            
+            # Obtener la hoja y aplicar formato
+            workbook = writer.book
+            worksheet = writer.sheets['Balanza de Comprobación']
+            
+            # Aplicar formato a encabezados
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Ajustar ancho de columnas
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
         
-        with col2:
-            # Excel (simulado con CSV)
-            st.download_button(
-                label="📊 Descargar Excel (CSV)",
-                data=csv,
-                file_name=f"balanza_comprobacion_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+        excel_data = output.getvalue()
+        
+        st.download_button(
+            label="📊 Descargar Excel",
+            data=excel_data,
+            file_name=f"balanza_comprobacion_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
     
     else:
         st.info("📭 No se encontraron cuentas para mostrar con los filtros aplicados")
@@ -460,78 +477,6 @@ def generar_graficos_balanza(backend_url: str, id_periodo: int):
                     title='Distribución de Saldos por Tipo de Cuenta'
                 )
                 st.plotly_chart(fig_pie, width="stretch")
-                
-                # Gráfico 2: Top cuentas por saldo (Bar chart)
-                st.markdown("#### 📊 Top 15 Cuentas por Saldo")
-                
-                df['saldo_abs'] = df['saldo_final'].abs()
-                top_cuentas = df.nlargest(15, 'saldo_abs')
-                
-                fig_bar = px.bar(
-                    top_cuentas,
-                    x='codigo_cuenta',
-                    y='saldo_abs',
-                    title='Top 15 Cuentas por Saldo (Valor Absoluto)',
-                    hover_data=['nombre_cuenta', 'saldo_final'],
-                    color='tipo_cuenta'
-                )
-                
-                fig_bar.update_layout(
-                    xaxis_title="Código de Cuenta",
-                    yaxis_title="Saldo ($)",
-                    xaxis_tickangle=-45
-                )
-                
-                st.plotly_chart(fig_bar, width="stretch")
-                
-                # Gráfico 3: Análisis de movimientos (Scatter plot)
-                st.markdown("#### 📊 Análisis de Actividad vs Saldo")
-                
-                df['total_movimientos'] = df['total_debe'] + df['total_haber']
-                
-                fig_scatter = px.scatter(
-                    df,
-                    x='total_movimientos',
-                    y='saldo_abs',
-                    title='Actividad Total vs Saldo Final',
-                    hover_data=['codigo_cuenta', 'nombre_cuenta'],
-                    color='tipo_cuenta',
-                    size='saldo_abs',
-                    size_max=20
-                )
-                
-                fig_scatter.update_layout(
-                    xaxis_title="Total Movimientos ($)",
-                    yaxis_title="Saldo Final ($)"
-                )
-                
-                st.plotly_chart(fig_scatter, width="stretch")
-                
-                # Tabla de estadísticas
-                st.markdown("#### 📊 Estadísticas por Tipo de Cuenta")
-                
-                estadisticas = df.groupby('tipo_cuenta').agg({
-                    'codigo_cuenta': 'count',
-                    'saldo_final': ['sum', 'mean', 'std'],
-                    'total_debe': 'sum',
-                    'total_haber': 'sum'
-                }).round(2)
-                
-                # Aplanar columnas
-                estadisticas.columns = [
-                    'Cantidad_Cuentas', 'Suma_Saldos', 'Promedio_Saldos', 
-                    'Desv_Std_Saldos', 'Total_Debe', 'Total_Haber'
-                ]
-                
-                # Formatear columnas monetarias
-                for col in ['Suma_Saldos', 'Promedio_Saldos', 'Desv_Std_Saldos', 'Total_Debe', 'Total_Haber']:
-                    estadisticas[f'{col}_fmt'] = estadisticas[col].apply(lambda x: f"${x:,.2f}")
-                
-                estadisticas_display = estadisticas[['Cantidad_Cuentas', 'Suma_Saldos_fmt', 'Promedio_Saldos_fmt', 
-                                                   'Total_Debe_fmt', 'Total_Haber_fmt']].copy()
-                estadisticas_display.columns = ['Cantidad', 'Suma Saldos', 'Promedio', 'Total Debe', 'Total Haber']
-                
-                st.dataframe(estadisticas_display, width="stretch")
                 
             else:
                 st.info("No hay datos para generar gráficos")

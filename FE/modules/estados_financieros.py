@@ -295,7 +295,7 @@ def mostrar_indicadores_balance(total_activos: float, total_pasivos: float, tota
     
     st.markdown("### 📊 Indicadores Financieros")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2 = st.columns(2)
     
     # Ratio de liquidez (necesita activos y pasivos corrientes)
     activos = balance_data.get('activos', {})
@@ -308,146 +308,149 @@ def mostrar_indicadores_balance(total_activos: float, total_pasivos: float, tota
     pasivos_corrientes = sum(c.get('saldo_final', 0) for c in pasivos_corrientes_lista)
     
     with col1:
-        if pasivos_corrientes > 0:
-            ratio_liquidez = activos_corrientes / pasivos_corrientes
-            st.metric("Ratio de Liquidez", f"{ratio_liquidez:.2f}")
-        else:
-            st.metric("Ratio de Liquidez", "N/A")
-    
-    with col2:
         if total_activos > 0:
             ratio_endeudamiento = (total_pasivos / total_activos) * 100
             st.metric("% Endeudamiento", f"{ratio_endeudamiento:.1f}%")
         else:
             st.metric("% Endeudamiento", "N/A")
     
-    with col3:
+    with col2:
         if total_activos > 0:
             ratio_patrimonio = (total_patrimonio / total_activos) * 100
             st.metric("% Patrimonio", f"{ratio_patrimonio:.1f}%")
         else:
             st.metric("% Patrimonio", "N/A")
-    
-    with col4:
-        if total_patrimonio > 0:
-            ratio_apalancamiento = total_pasivos / total_patrimonio
-            st.metric("Apalancamiento", f"{ratio_apalancamiento:.2f}")
-        else:
-            st.metric("Apalancamiento", "N/A")
 
 def generar_descarga_balance(balance_data: Dict[str, Any]):
     """Generar archivo para descarga del balance"""
     
     st.markdown("### 📥 Descargar Reporte")
     
-    col1, col2 = st.columns(2)
+    # Crear resumen para Excel
+    resumen_data = []
     
-    with col1:
-        # Crear resumen para CSV
-        resumen_data = []
+    # Agregar activos
+    activos = balance_data.get('activos', {})
+    
+    # Activos corrientes
+    for cuenta in activos.get('corrientes', []):
+        resumen_data.append({
+            'Tipo': 'Activo Corriente',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    # Activos no corrientes
+    for cuenta in activos.get('no_corrientes', []):
+        resumen_data.append({
+            'Tipo': 'Activo No Corriente',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    # Agregar pasivos
+    pasivos = balance_data.get('pasivos', {})
+    
+    # Pasivos corrientes
+    for cuenta in pasivos.get('corrientes', []):
+        resumen_data.append({
+            'Tipo': 'Pasivo Corriente',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    # Pasivos no corrientes
+    for cuenta in pasivos.get('no_corrientes', []):
+        resumen_data.append({
+            'Tipo': 'Pasivo No Corriente',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    # Agregar patrimonio
+    patrimonio = balance_data.get('patrimonio', {})
+    
+    # Capital
+    for cuenta in patrimonio.get('capital', []):
+        resumen_data.append({
+            'Tipo': 'Capital',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    # Utilidades
+    for cuenta in patrimonio.get('utilidades', []):
+        resumen_data.append({
+            'Tipo': 'Utilidades',
+            'Codigo': cuenta.get('codigo', ''),
+            'Cuenta': cuenta.get('nombre', ''),
+            'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
+            'Debe': cuenta.get('debe', 0),
+            'Haber': cuenta.get('haber', 0),
+            'Saldo_Final': cuenta.get('saldo_final', 0)
+        })
+    
+    if resumen_data:
+        df_resumen = pd.DataFrame(resumen_data)
         
-        # Agregar activos
-        activos = balance_data.get('activos', {})
+        # Crear Excel con formato adecuado
+        from io import BytesIO
+        import openpyxl
+        from openpyxl.styles import Font, Alignment
         
-        # Activos corrientes
-        for cuenta in activos.get('corrientes', []):
-            resumen_data.append({
-                'Tipo': 'Activo Corriente',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        # Activos no corrientes
-        for cuenta in activos.get('no_corrientes', []):
-            resumen_data.append({
-                'Tipo': 'Activo No Corriente',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        # Agregar pasivos
-        pasivos = balance_data.get('pasivos', {})
-        
-        # Pasivos corrientes
-        for cuenta in pasivos.get('corrientes', []):
-            resumen_data.append({
-                'Tipo': 'Pasivo Corriente',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        # Pasivos no corrientes
-        for cuenta in pasivos.get('no_corrientes', []):
-            resumen_data.append({
-                'Tipo': 'Pasivo No Corriente',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        # Agregar patrimonio
-        patrimonio = balance_data.get('patrimonio', {})
-        
-        # Capital
-        for cuenta in patrimonio.get('capital', []):
-            resumen_data.append({
-                'Tipo': 'Capital',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        # Utilidades
-        for cuenta in patrimonio.get('utilidades', []):
-            resumen_data.append({
-                'Tipo': 'Utilidades',
-                'Codigo': cuenta.get('codigo', ''),
-                'Cuenta': cuenta.get('nombre', ''),
-                'Saldo_Inicial': cuenta.get('saldo_inicial', 0),
-                'Debe': cuenta.get('debe', 0),
-                'Haber': cuenta.get('haber', 0),
-                'Saldo_Final': cuenta.get('saldo_final', 0)
-            })
-        
-        if resumen_data:
-            df_resumen = pd.DataFrame(resumen_data)
-            csv = df_resumen.to_csv(index=False)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_resumen.to_excel(writer, index=False, sheet_name='Balance General')
             
-            st.download_button(
-                label="📥 Descargar CSV",
-                data=csv,
-                file_name=f"balance_general_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
-            )
-    
-    with col2:
-        # JSON completo
-        import json
-        json_data = json.dumps(balance_data, indent=2, ensure_ascii=False)
+            # Obtener la hoja y aplicar formato
+            workbook = writer.book
+            worksheet = writer.sheets['Balance General']
+            
+            # Aplicar formato a encabezados
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Ajustar ancho de columnas
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        excel_data = output.getvalue()
         
         st.download_button(
-            label="📄 Descargar JSON",
-            data=json_data,
-            file_name=f"balance_general_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json"
+            label="📊 Descargar Excel",
+            data=excel_data,
+            file_name=f"balance_general_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 def estado_resultados(backend_url: str):
@@ -723,123 +726,110 @@ def mostrar_grafico_resultados(total_ingresos: float, total_egresos: float, util
     
     st.markdown("### 📊 Análisis Gráfico")
     
-    # Gráfico de barras comparativo
-    conceptos = ['Ingresos', 'Egresos', 'Utilidad Neta']
-    valores = [total_ingresos, total_egresos, utilidad_neta]
-    colores = ['#2ecc71', '#e74c3c', '#3498db' if utilidad_neta >= 0 else '#e74c3c']
-    
-    fig = go.Figure()
-    
-    fig.add_trace(go.Bar(
-        x=conceptos,
-        y=valores,
-        marker_color=colores,
-        text=[f'${abs(v):,.0f}' for v in valores],
-        textposition='outside',
-        textfont=dict(size=14)
-    ))
-    
-    fig.update_layout(
-        title="Composición del Estado de Resultados",
-        yaxis_title="Valor ($)",
-        xaxis_title="Concepto",
-        showlegend=False,
-        height=400,
-        yaxis=dict(tickformat="$,.0f")
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Gráfico de pastel para distribución de egresos si hay datos
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if total_ingresos > 0 and total_egresos > 0:
-            fig_composicion = go.Figure(data=[go.Pie(
-                labels=['Ingresos', 'Egresos', 'Utilidad Neta'],
-                values=[total_ingresos, total_egresos, abs(utilidad_neta)],
-                hole=.3
-            )])
-            fig_composicion.update_layout(title="Composición General", height=300)
-            st.plotly_chart(fig_composicion, use_container_width=True)
+    # Gráfico de pastel para distribución
+    if total_ingresos > 0 and total_egresos > 0:
+        fig_composicion = go.Figure(data=[go.Pie(
+            labels=['Ingresos', 'Egresos', 'Utilidad Neta'],
+            values=[total_ingresos, total_egresos, abs(utilidad_neta)],
+            hole=.3
+        )])
+        fig_composicion.update_layout(title="Composición del Estado de Resultados", height=400)
+        st.plotly_chart(fig_composicion, use_container_width=True)
 
 def generar_descarga_resultados(resultados_data: Dict[str, Any]):
     """Generar archivo para descarga del estado de resultados"""
     
     st.markdown("### 📥 Descargar Reporte")
     
-    col1, col2 = st.columns(2)
+    # CSV simplificado
+    resumen_data = []
     
-    with col1:
-        # CSV simplificado
-        resumen_data = []
+    # Agregar ingresos
+    ingresos = resultados_data.get('ingresos', {})
+    for categoria, monto in ingresos.items():
+        if categoria not in ['total', 'total_ingresos']:
+            resumen_data.append({
+                'Tipo': 'Ingreso',
+                'Categoría': categoria.replace('_', ' ').title(),
+                'Monto': monto
+            })
+    
+    # Agregar egresos
+    egresos = resultados_data.get('egresos', {})
+    for categoria, monto in egresos.items():
+        if categoria not in ['total', 'total_egresos', 'total_gastos']:
+            resumen_data.append({
+                'Tipo': 'Egreso',
+                'Categoría': categoria.replace('_', ' ').title(),
+                'Monto': monto
+            })
+    
+    # Agregar resumen
+    resumen = resultados_data.get('resumen', {})
+    resumen_data.extend([
+        {
+            'Tipo': 'Resumen',
+            'Categoría': 'Total Ingresos',
+            'Monto': resumen.get('total_ingresos', 0)
+        },
+        {
+            'Tipo': 'Resumen',
+            'Categoría': 'Total Egresos',
+            'Monto': resumen.get('total_egresos', 0)
+        },
+        {
+            'Tipo': 'Resumen',
+            'Categoría': 'Utilidad Bruta',
+            'Monto': resumen.get('utilidad_bruta', 0)
+        },
+        {
+            'Tipo': 'Resumen',
+            'Categoría': 'Utilidad Neta',
+            'Monto': resumen.get('utilidad_neta', 0)
+        }
+    ])
+    
+    if resumen_data:
+        df_resumen = pd.DataFrame(resumen_data)
         
-        # Agregar ingresos
-        ingresos = resultados_data.get('ingresos', {})
-        for categoria, monto in ingresos.items():
-            if categoria not in ['total', 'total_ingresos']:
-                resumen_data.append({
-                    'Tipo': 'Ingreso',
-                    'Categoría': categoria.replace('_', ' ').title(),
-                    'Monto': monto
-                })
+        # Crear Excel con formato adecuado
+        from io import BytesIO
+        import openpyxl
+        from openpyxl.styles import Font, Alignment
         
-        # Agregar egresos
-        egresos = resultados_data.get('egresos', {})
-        for categoria, monto in egresos.items():
-            if categoria not in ['total', 'total_egresos', 'total_gastos']:
-                resumen_data.append({
-                    'Tipo': 'Egreso',
-                    'Categoría': categoria.replace('_', ' ').title(),
-                    'Monto': monto
-                })
-        
-        # Agregar resumen
-        resumen = resultados_data.get('resumen', {})
-        resumen_data.extend([
-            {
-                'Tipo': 'Resumen',
-                'Categoría': 'Total Ingresos',
-                'Monto': resumen.get('total_ingresos', 0)
-            },
-            {
-                'Tipo': 'Resumen',
-                'Categoría': 'Total Egresos',
-                'Monto': resumen.get('total_egresos', 0)
-            },
-            {
-                'Tipo': 'Resumen',
-                'Categoría': 'Utilidad Bruta',
-                'Monto': resumen.get('utilidad_bruta', 0)
-            },
-            {
-                'Tipo': 'Resumen',
-                'Categoría': 'Utilidad Neta',
-                'Monto': resumen.get('utilidad_neta', 0)
-            }
-        ])
-        
-        if resumen_data:
-            df_resumen = pd.DataFrame(resumen_data)
-            csv = df_resumen.to_csv(index=False)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_resumen.to_excel(writer, index=False, sheet_name='Estado de Resultados')
             
-            st.download_button(
-                label="📥 Descargar CSV",
-                data=csv,
-                file_name=f"estado_resultados_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
-            )
-    
-    with col2:
-        # JSON completo
-        import json
-        json_data = json.dumps(resultados_data, indent=2, ensure_ascii=False)
+            # Obtener la hoja y aplicar formato
+            workbook = writer.book
+            worksheet = writer.sheets['Estado de Resultados']
+            
+            # Aplicar formato a encabezados
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Ajustar ancho de columnas
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        excel_data = output.getvalue()
         
         st.download_button(
-            label="📄 Descargar JSON",
-            data=json_data,
-            file_name=f"estado_resultados_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json"
+            label="📊 Descargar Excel",
+            data=excel_data,
+            file_name=f"estado_resultados_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
 def analisis_comparativo(backend_url: str):

@@ -145,11 +145,10 @@ class ProductoService:
             Producto.estado_producto == "ACTIVO"
         ).scalar()
         
-        # Categorías únicas
-        total_categorias = db.query(func.count(func.distinct(Producto.categoria_producto))).scalar()
-        
-        # Precio promedio
-        precio_promedio = db.query(func.avg(Producto.precio_venta)).scalar() or 0
+        # Productos inactivos
+        productos_inactivos = db.query(func.count(Producto.id_producto)).filter(
+            Producto.estado_producto == "INACTIVO"
+        ).scalar()
         
         # Distribución por tipo
         distribucion_tipos = db.query(
@@ -158,6 +157,14 @@ class ProductoService:
         ).group_by(Producto.tipo_producto).all()
         
         tipos_dict = {tipo: count for tipo, count in distribucion_tipos}
+        
+        # Distribución por estado
+        distribucion_estados = db.query(
+            Producto.estado_producto,
+            func.count(Producto.id_producto)
+        ).group_by(Producto.estado_producto).all()
+        
+        estados_dict = {estado: count for estado, count in distribucion_estados}
         
         # Productos con stock bajo
         productos_stock_bajo = db.query(func.count(Producto.id_producto)).filter(
@@ -169,9 +176,9 @@ class ProductoService:
         return {
             "total_productos": total_productos,
             "productos_activos": productos_activos,
-            "total_categorias": total_categorias,
-            "precio_promedio": float(precio_promedio),
+            "productos_inactivos": productos_inactivos,
             "distribucion_tipos": tipos_dict,
+            "distribucion_estados": estados_dict,
             "productos_stock_bajo": productos_stock_bajo
         }
 

@@ -144,15 +144,14 @@ class ClienteService:
     
     @staticmethod
     def eliminar_cliente(db: Session, id_cliente: int) -> bool:
-        """Eliminar un cliente (soft delete cambiando estado)"""
+        """Eliminar un cliente permanentemente de la base de datos"""
         
         cliente = ClienteService.obtener_cliente(db, id_cliente)
         if not cliente:
             return False
         
-        # Soft delete: cambiar a INACTIVO
-        cliente.estado_cliente = "INACTIVO"
-        
+        # Eliminación real (hard delete)
+        db.delete(cliente)
         db.commit()
         
         return True
@@ -161,8 +160,21 @@ class ClienteService:
     def obtener_analisis_clientes(db: Session) -> dict:
         """Obtener datos de análisis de clientes"""
         
+        from sqlalchemy import func, extract
+        from datetime import datetime
+        
         total_clientes = db.query(Cliente).count()
         clientes_activos = db.query(Cliente).filter(Cliente.estado_cliente == "ACTIVO").count()
+        clientes_inactivos = db.query(Cliente).filter(Cliente.estado_cliente == "INACTIVO").count()
+        
+        # Clientes nuevos del mes actual
+        mes_actual = datetime.now().month
+        anio_actual = datetime.now().year
+        
+        nuevos_mes = db.query(Cliente).filter(
+            extract('month', Cliente.fecha_creacion) == mes_actual,
+            extract('year', Cliente.fecha_creacion) == anio_actual
+        ).count()
         
         # Análisis por categoría
         categorias = {}
@@ -177,15 +189,14 @@ class ClienteService:
             tipos[tipo] = tipos.get(tipo, 0) + 1
         
         # Límite de crédito total
-        from sqlalchemy import func
         limite_total = db.query(func.sum(Cliente.limite_credito)).scalar() or Decimal("0.00")
         
         return {
             "total_clientes": total_clientes,
             "clientes_activos": clientes_activos,
-            "clientes_inactivos": total_clientes - clientes_activos,
+            "clientes_inactivos": clientes_inactivos,
+            "nuevos_mes": nuevos_mes,
             "distribucion_categorias": categorias,
             "distribucion_tipos": tipos,
-            "limite_credito_total": float(limite_total),
-            "tasa_retencion": round((clientes_activos / total_clientes * 100) if total_clientes > 0 else 0, 2)
+            "limite_credito_total": float(limite_total)
         }

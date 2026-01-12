@@ -44,10 +44,8 @@ def render_page(backend_url: str):
     st.markdown("Sistema completo de reportes y análisis de ventas para la toma de decisiones")
     
     # Tabs para organizar reportes
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3 = st.tabs([
         "📈 Dashboard General", 
-        "📋 Reportes Detallados", 
-        "🎯 Análisis por Periodo",
         "🏆 Top Productos/Clientes",
         "📤 Exportar"
     ])
@@ -56,15 +54,9 @@ def render_page(backend_url: str):
         dashboard_general(backend_url)
     
     with tab2:
-        reportes_detallados(backend_url)
-    
-    with tab3:
-        analisis_periodo(backend_url)
-    
-    with tab4:
         top_productos_clientes(backend_url)
     
-    with tab5:
+    with tab3:
         exportar_reportes(backend_url)
 
 def dashboard_general(backend_url: str):

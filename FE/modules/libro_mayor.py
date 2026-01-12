@@ -18,15 +18,12 @@ def render_page(backend_url: str):
     st.markdown("Consulta de movimientos mayorizados por cuenta contable con saldos acumulados")
     
     # Tabs para organizar funcionalidades
-    tab1, tab2, tab3 = st.tabs(["📋 Consultar Mayor", "📊 Resumen de Cuentas", "📥 Descargar Libro Mayor"])
+    tab1, tab2 = st.tabs(["📋 Consultar Mayor", "📥 Descargar Libro Mayor"])
     
     with tab1:
         consultar_mayor(backend_url)
     
     with tab2:
-        resumen_cuentas(backend_url)
-    
-    with tab3:
         descargar_libro_mayor(backend_url)
 
 def consultar_mayor(backend_url: str):
