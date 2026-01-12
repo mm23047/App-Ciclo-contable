@@ -2062,7 +2062,6 @@ def mostrar_reporte_periodo(datos: Dict[str, Any]):
                 'Total': info.get('total_ventas', 0)
             })
         
-        import pandas as pd
         df = pd.DataFrame(clientes_df)
         df = df.sort_values('Total', ascending=False)
         
@@ -2109,8 +2108,6 @@ def mostrar_reporte_periodo(datos: Dict[str, Any]):
 
 def mostrar_reporte_por_cliente(datos: Dict[str, Any]):
     """Mostrar reporte de ventas agrupado por cliente"""
-    
-    import pandas as pd
     
     # Información del período
     periodo = datos.get('periodo', {})
@@ -2166,7 +2163,6 @@ def mostrar_reporte_por_cliente(datos: Dict[str, Any]):
         st.markdown("#### 📊 Top 10 Clientes")
         top_10 = df.head(10)
         
-        import plotly.express as px
         fig = px.bar(
             top_10,
             x='Cliente',
@@ -2181,8 +2177,6 @@ def mostrar_reporte_por_cliente(datos: Dict[str, Any]):
 
 def mostrar_reporte_por_producto(datos: Dict[str, Any]):
     """Mostrar reporte de ventas agrupado por producto"""
-    
-    import pandas as pd
     
     # Información del período
     periodo = datos.get('periodo', {})
@@ -2245,7 +2239,6 @@ def mostrar_reporte_por_producto(datos: Dict[str, Any]):
         st.markdown("#### 📊 Top 10 Productos Más Vendidos")
         top_10 = df.head(10)
         
-        import plotly.express as px
         fig = px.bar(
             top_10,
             x='Producto',
@@ -2260,8 +2253,6 @@ def mostrar_reporte_por_producto(datos: Dict[str, Any]):
 
 def mostrar_reporte_tendencias(datos: Dict[str, Any]):
     """Mostrar reporte de tendencias de ventas"""
-    
-    import pandas as pd
     
     # Información del período
     periodo = datos.get('periodo', {})
@@ -2316,8 +2307,6 @@ def mostrar_reporte_tendencias(datos: Dict[str, Any]):
     if ventas_diarias:
         df = pd.DataFrame(ventas_diarias)
         
-        import plotly.graph_objects as go
-        
         fig = go.Figure()
         
         fig.add_trace(go.Scatter(
@@ -2353,8 +2342,6 @@ def mostrar_reporte_tendencias(datos: Dict[str, Any]):
 
 def mostrar_reporte_cartera(datos: Dict[str, Any]):
     """Mostrar reporte de cuentas por cobrar"""
-    
-    import pandas as pd
     
     # Fecha de corte
     fecha_corte = datos.get('fecha_corte', '')
@@ -2415,7 +2402,6 @@ def mostrar_reporte_cartera(datos: Dict[str, Any]):
                 )
             
             with col2:
-                import plotly.express as px
                 fig = px.pie(
                     df_estados,
                     values='Total',
