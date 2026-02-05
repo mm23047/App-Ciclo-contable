@@ -632,7 +632,7 @@ def show_transaction_summary(backend_url: str):
             # Gráfico de tendencia temporal
             if 'fecha_transaccion' in df.columns:
                 st.markdown("#### 📈 Tendencia Temporal")
-                df['fecha'] = pd.to_datetime(df['fecha_transaccion']).dt.date
+                df['fecha'] = pd.to_datetime(df['fecha_transaccion'], format='mixed', errors='coerce').dt.date
                 tendencia = df.groupby(['fecha', 'tipo']).size().reset_index(name='cantidad')
                 
                 fig_tendencia = px.line(
