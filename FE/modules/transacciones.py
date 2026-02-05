@@ -114,9 +114,19 @@ def create_transaction_form(backend_url: str):
             # Prellenar fecha si está en modo edición
             if transaction_data:
                 try:
-                    existing_date = datetime.fromisoformat(transaction_data['fecha_transaccion'].replace('Z', '+00:00'))
+                    # Manejar diferentes formatos de fecha ISO
+                    fecha_str = transaction_data['fecha_transaccion']
+                    # Eliminar 'Z' y agregar timezone si existe
+                    fecha_str = fecha_str.replace('Z', '+00:00')
+                    # Si no tiene microsegundos, agregarlos
+                    if 'T' in fecha_str and '.' not in fecha_str.split('T')[1].split('+')[0].split('-')[0]:
+                        fecha_str = fecha_str.replace('+', '.000000+').replace('T', 'T', 1).replace('.000000+', '+', 1)
+                        if '+' not in fecha_str and '-' not in fecha_str.split('T')[1]:
+                            fecha_str = fecha_str.split('T')[0] + 'T' + fecha_str.split('T')[1].split('.')[0] + '.000000'
+                    existing_date = datetime.fromisoformat(fecha_str)
                     default_date = existing_date.date()
-                except:
+                except Exception as e:
+                    print(f"Error parseando fecha: {e}")
                     default_date = date.today()
             else:
                 default_date = date.today()
@@ -198,9 +208,14 @@ def create_transaction_form(backend_url: str):
                 "IMPUESTOS",
                 "INVERSIÓN",
                 "PRÉSTAMO",
+                "PRESTAMO",
                 "ACTIVOS",
+                "CAPITAL",
                 "GASTOS ADMINISTRATIVOS",
                 "GASTOS OPERATIVOS",
+                "GASTO",
+                "COBRO",
+                "PAGO",
                 "OTROS"
             ]
             categoria_index = 0
@@ -285,9 +300,16 @@ def create_transaction_form(backend_url: str):
             if modo_edicion and transaction_data:
                 # Usar tiempo existente si es edición
                 try:
-                    existing_dt = datetime.fromisoformat(transaction_data['fecha_transaccion'].replace('Z', '+00:00'))
+                    # Manejar diferentes formatos de fecha ISO
+                    fecha_str = transaction_data['fecha_transaccion']
+                    fecha_str = fecha_str.replace('Z', '').replace('+00:00', '')
+                    # Parsear solo la parte de fecha y hora sin timezone
+                    if 'T' in fecha_str:
+                        fecha_str = fecha_str.split('+')[0].split('Z')[0]
+                    existing_dt = datetime.fromisoformat(fecha_str)
                     fecha_datetime = datetime.combine(fecha_transaccion, existing_dt.time())
-                except:
+                except Exception as e:
+                    print(f"Error parseando fecha: {e}")
                     fecha_datetime = datetime.combine(fecha_transaccion, datetime.now().time())
             else:
                 # Usar tiempo actual si es creación
@@ -439,9 +461,9 @@ def list_transactions(backend_url: str):
             # Convert to DataFrame for display
             df = pd.DataFrame(transacciones_pagina)
             
-            # Format datetime columns
-            df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion']).dt.strftime('%Y-%m-%d %H:%M')
-            df['fecha_creacion'] = pd.to_datetime(df['fecha_creacion']).dt.strftime('%Y-%m-%d %H:%M')
+            # Format datetime columns (con manejo flexible de formatos)
+            df['fecha_transaccion'] = pd.to_datetime(df['fecha_transaccion'], format='mixed', utc=True).dt.strftime('%Y-%m-%d %H:%M')
+            df['fecha_creacion'] = pd.to_datetime(df['fecha_creacion'], format='mixed', utc=True).dt.strftime('%Y-%m-%d %H:%M')
             
             # Añadir columna de estado visual
             df['Estado'] = df['tipo'].apply(lambda x: '🟢 Ingreso' if x == 'INGRESO' else '🔴 Egreso')

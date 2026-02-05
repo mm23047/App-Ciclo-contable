@@ -9,8 +9,11 @@ from datetime import datetime
 # Categorías válidas para transacciones
 CATEGORIAS_VALIDAS = [
     "VENTA", "COMPRA", "NÓMINA", "SERVICIOS", "IMPUESTOS", 
-    "INVERSIÓN", "PRÉSTAMO", "ACTIVOS", "GASTOS ADMINISTRATIVOS", 
-    "GASTOS OPERATIVOS", "OTROS"
+    "INVERSIÓN", "PRÉSTAMO", "PRESTAMO",  # Incluir ambas formas (con y sin tilde)
+    "ACTIVOS", "CAPITAL",  # Capital para inversiones iniciales
+    "GASTOS ADMINISTRATIVOS", "GASTOS OPERATIVOS", "GASTO",  # Gasto genérico
+    "COBRO", "PAGO",  # Para transacciones de cobros y pagos específicos
+    "OTROS"  # Categoría general para casos no clasificados
 ]
 
 class TransaccionBase(BaseModel):
