@@ -48,7 +48,7 @@ def crear_manual(
 @router.get("/", response_model=List[ManualCuentasRead])
 def listar_manuales(
     skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=500),
+    limit: int = Query(500, ge=1, le=500),
     id_cuenta: Optional[int] = Query(None),
     texto_busqueda: Optional[str] = Query(None),
     naturaleza_cuenta: Optional[str] = Query(None),

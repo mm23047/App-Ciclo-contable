@@ -78,7 +78,7 @@ def get_manual_por_cuenta(db: Session, cuenta_id: int) -> Optional[ManualCuentas
 def get_manuales_cuentas(
     db: Session, 
     skip: int = 0, 
-    limit: int = 100,
+    limit: int = 500,
     texto_busqueda: Optional[str] = None,
     naturaleza_cuenta: Optional[str] = None,
     clasificacion: Optional[str] = None,
