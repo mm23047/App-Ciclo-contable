@@ -10,4 +10,5 @@ jinja2
 openpyxl
 requests
 bcrypt
+passlib
 pyjwt
