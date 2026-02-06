@@ -21,7 +21,7 @@ def crear_cuenta(cuenta: CatalogoCuentaCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=List[CatalogoCuentaRead])
 def listar_cuentas(
     skip: int = 0, 
-    limit: int = 100,
+    limit: int = 200,
     tipo_cuenta: str = None,
     estado: str = None,
     codigo_like: str = None,

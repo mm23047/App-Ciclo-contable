@@ -99,8 +99,39 @@ def mostrar_catalogo(backend_url: str):
             cuentas = response.json()
             
             if cuentas:
+                # Configuración de paginación
+                total_cuentas = len(cuentas)
+                
+                col_info, col_items = st.columns([3, 1])
+                with col_info:
+                    st.info(f"📊 **Total de cuentas:** {total_cuentas}")
+                with col_items:
+                    items_per_page = st.selectbox(
+                        "Cuentas por página:",
+                        options=[20, 50, 100, 200],
+                        index=0,  # 20 por defecto
+                        key="items_per_page_catalogo"
+                    )
+                
+                total_pages = (total_cuentas + items_per_page - 1) // items_per_page
+                
+                # Inicializar página actual
+                if 'current_page_catalogo' not in st.session_state:
+                    st.session_state.current_page_catalogo = 1
+                
+                # Ajustar página si está fuera de rango
+                if st.session_state.current_page_catalogo > total_pages:
+                    st.session_state.current_page_catalogo = total_pages
+                
+                # Calcular índices
+                start_idx = (st.session_state.current_page_catalogo - 1) * items_per_page
+                end_idx = min(start_idx + items_per_page, total_cuentas)
+                
+                # Obtener cuentas de la página actual
+                cuentas_pagina = cuentas[start_idx:end_idx]
+                
                 # Crear DataFrame para mejor visualización
-                df_cuentas = pd.DataFrame(cuentas)
+                df_cuentas = pd.DataFrame(cuentas_pagina)
                 
                 # Organizar columnas
                 columnas_mostrar = [
@@ -137,11 +168,44 @@ def mostrar_catalogo(backend_url: str):
                     hide_index=True
                 )
                 
-                # Métricas
+                # Mostrar rango
+                st.caption(f"Mostrando cuentas {start_idx + 1} - {end_idx} de {total_cuentas}")
+                
+                # Controles de paginación
+                if total_pages > 1:
+                    st.markdown("---")
+                    col1, col2, col3, col4, col5 = st.columns([1, 1, 2, 1, 1])
+                    
+                    with col1:
+                        if st.button("⏮️ Primera", key="first_catalogo", use_container_width=True, disabled=st.session_state.current_page_catalogo == 1):
+                            st.session_state.current_page_catalogo = 1
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("◀️ Anterior", key="prev_catalogo", use_container_width=True, disabled=st.session_state.current_page_catalogo == 1):
+                            st.session_state.current_page_catalogo -= 1
+                            st.rerun()
+                    
+                    with col3:
+                        st.markdown(f"<div style='text-align: center; padding: 8px;'><strong>Página {st.session_state.current_page_catalogo} de {total_pages}</strong></div>", unsafe_allow_html=True)
+                    
+                    with col4:
+                        if st.button("▶️ Siguiente", key="next_catalogo", use_container_width=True, disabled=st.session_state.current_page_catalogo == total_pages):
+                            st.session_state.current_page_catalogo += 1
+                            st.rerun()
+                    
+                    with col5:
+                        if st.button("⏭️ Última", key="last_catalogo", use_container_width=True, disabled=st.session_state.current_page_catalogo == total_pages):
+                            st.session_state.current_page_catalogo = total_pages
+                            st.rerun()
+                
+                st.markdown("---")
+                
+                # Métricas (usando todas las cuentas, no solo la página)
                 col1, col2, col3, col4 = st.columns(4)
                 
                 with col1:
-                    st.metric("Total Cuentas", len(cuentas))
+                    st.metric("Total Cuentas", total_cuentas)
                 
                 with col2:
                     activas = len([c for c in cuentas if c['estado'] == 'ACTIVA'])
