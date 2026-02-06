@@ -127,7 +127,7 @@ def cambiar_estado_producto(
 def actualizar_stock_producto(
     id_producto: int,
     cantidad: int,
-    tipo_movimiento: str = Query("ajuste", regex="^(ajuste|entrada|salida)$"),
+    tipo_movimiento: str = Query("ajuste", pattern="^(ajuste|entrada|salida)$"),
     db: Session = Depends(get_db)
 ):
     """Actualizar stock de producto"""

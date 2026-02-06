@@ -9,6 +9,6 @@ pandas
 jinja2
 openpyxl
 requests
-bcrypt
-passlib
+bcrypt>=4.0.1
+passlib[bcrypt]
 pyjwt

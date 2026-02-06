@@ -32,8 +32,8 @@ class ManualCuentasUpdate(BaseModel):
 
 class ManualCuentasRead(ManualCuentasBase):
     id_manual: int
-    fecha_creacion: datetime
-    fecha_actualizacion: datetime
+    fecha_creacion: Optional[datetime] = None
+    fecha_actualizacion: Optional[datetime] = None
     codigo_cuenta: Optional[str] = Field(None, description="Código de la cuenta asociada")
     nombre_cuenta: Optional[str] = Field(None, description="Nombre de la cuenta asociada")
     
