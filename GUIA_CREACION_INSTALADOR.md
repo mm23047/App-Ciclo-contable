@@ -1045,7 +1045,7 @@ Un archivo .exe de ~500MB-1GB que:
 
 **Última actualización:** 11 de Diciembre de 2025  
 **Versión de la guía:** 1.0  
-**Mantenedor:** [Tu Nombre]
+
 
 ---
 
